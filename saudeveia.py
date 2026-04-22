@@ -63,18 +63,18 @@ st.markdown("""
 # --- 4. BARRA LATERAL ---
 with st.sidebar:
     st.markdown("<h2 style='text-align: center;'>🏥 Gestão Saúde</h2>", unsafe_allow_html=True)
-    if st.button("⚡ Testar Telegram"):
-        enviar_telegram("🚀 Teste de conexão: OK!"); st.success("Enviado!")
-    
     st.markdown("---")
+    
     if "admin" not in st.session_state: st.session_state.admin = False
     if not st.session_state.admin:
         pw = st.text_input("Senha ADM", type="password")
         if st.button("Liberar"):
             if pw == "1234": st.session_state.admin = True; st.rerun()
     else:
+        st.success("✨ Modo Edição Ativo")
         if st.button("Sair ADM"): st.session_state.admin = False; st.rerun()
 
+    st.markdown("---")
     menu = st.radio("Navegação", ["📊 Estoque", "🩺 Histórico Médico", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
 
 # --- 5. LÓGICA PRINCIPAL ---
@@ -95,7 +95,7 @@ if menu == "📊 Estoque":
             dias_restantes = int(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
             data_fim = hoje + timedelta(days=dias_restantes)
 
-            # VIGIA DE 7 DIAS
+            # VIGIA DE 7 DIAS (DISPARA AUTOMÁTICO AO ABRIR O ESTOQUE)
             if dias_restantes < 7 and r['nome'] not in st.session_state.alertas_enviados:
                 msg = f"⚠️ ALERTA: {r['nome']} ACABANDO!\n\nEstoque: {estoque_atual} un.\nDura apenas mais {dias_restantes} dias.\nAcaba em: {data_fim.strftime('%d/%m/%Y')}"
                 enviar_telegram(msg)
@@ -120,55 +120,55 @@ if menu == "📊 Estoque":
                             total_novo = estoque_atual + n_qtd
                             requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(total_novo), "data_inicio": str(hoje.date()), "preco": float(n_val)})
                             requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(n_val), "data_compra": str(hoje.date())})
-                            enviar_telegram(f"✅ REPOSIÇÃO: {r['nome']}\n📦 Total atual: {total_novo} un.\n💰 Valor: R$ {n_val:.2f}")
+                            enviar_telegram(f"✅ REPOSIÇÃO: {r['nome']}\n📦 Novo total: {total_novo} un.\n💰 Valor: R$ {n_val:.2f}")
                             st.success("Atualizado!"); time.sleep(1); st.cache_data.clear(); st.rerun()
 
 elif menu == "🩺 Histórico Médico":
-    st.title("🩺 Consultas")
+    st.title("🩺 Consultas Realizadas")
     df_c = api_get("consultas")
     if not df_c.empty:
         for _, c in df_c.iterrows():
             st.markdown(f"""<div class="med-card"><b>{c['data_consulta'].strftime('%d/%m/%Y')}</b><br>Dr. {c['medico']}<br>R$ {float(c.get('valor', 0)):.2f}</div>""", unsafe_allow_html=True)
 
 elif menu == "💰 Financeiro":
-    st.title("💰 Financeiro")
+    st.title("💰 Resumo Financeiro")
     df_r = api_get("compras")
     df_c = api_get("consultas")
     t1 = df_r['valor'].sum() if not df_r.empty else 0
     t2 = df_c['valor'].sum() if not df_c.empty else 0
-    st.metric("Total Gasto", f"R$ {t1+t2:.2f}")
+    st.metric("Gasto Total", f"R$ {t1+t2:.2f}")
     if not df_r.empty:
+        st.subheader("🛒 Compras de Medicamentos")
         st.dataframe(df_r[['data_compra', 'nome_remedio', 'valor']], use_container_width=True)
 
 elif menu == "➕ Cadastro":
     if not st.session_state.admin: st.warning("Acesse modo ADM")
     else:
-        tipo = st.selectbox("O que cadastrar?", ["Remédio", "Consulta"])
+        tipo = st.selectbox("Tipo de Cadastro:", ["Remédio", "Consulta"])
         with st.form("c_novo"):
             if tipo == "Remédio":
                 n, q = st.text_input("Nome"), st.number_input("Qtd Caixa", value=30)
                 d, p = st.number_input("Dose diária", value=1.0), st.number_input("Preço", value=0.0)
-                if st.form_submit_button("Salvar"):
+                if st.form_submit_button("Salvar Medicamento"):
                     requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
                     requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio":n,"valor":float(p),"data_compra":str(datetime.now().date())})
-                    enviar_telegram(f"🆕 NOVO REMÉDIO: {n}\n📦 {q} unidades")
+                    enviar_telegram(f"🆕 NOVO MEDICAMENTO: {n}\n📦 {q} unidades")
                     st.success("Salvo!"); time.sleep(1); st.cache_data.clear(); st.rerun()
             else:
-                m, v, dt = st.text_input("Médico"), st.number_input("Valor", value=0.0)
-                dt_p = st.date_input("Data")
-                if st.form_submit_button("Salvar"):
-                    requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt_p)})
-                    enviar_telegram(f"🩺 NOVA CONSULTA: {m}")
+                m, v, dt_sel = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
+                if st.form_submit_button("Salvar Consulta"):
+                    requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt_sel)})
+                    enviar_telegram(f"🩺 NOVA CONSULTA: {m}\n💰 Valor: R$ {v}")
                     st.success("Salvo!"); time.sleep(1); st.cache_data.clear(); st.rerun()
 
 elif menu == "🗑️ Remover":
     if not st.session_state.admin: st.warning("Acesse modo ADM")
     else:
-        tab = st.selectbox("Categoria:", ["remedios", "consultas", "compras"])
+        tab = st.selectbox("Escolha a Categoria:", ["remedios", "consultas", "compras"])
         df_d = api_get(tab)
         if not df_d.empty:
             col = 'nome' if tab == 'remedios' else 'medico' if tab == 'consultas' else 'nome_remedio'
-            it = st.selectbox("Item:", df_d[col].tolist())
+            it = st.selectbox("Item para Excluir:", df_d[col].tolist())
             if st.button("Remover Permanente"):
                 requests.delete(f"{URL_SUPABASE}{tab}?id=eq.{df_d[df_d[col] == it]['id'].values[0]}", headers=HEADERS)
-                st.rerun()
+                st.success("Removido!"); time.sleep(1); st.cache_data.clear(); st.rerun()
