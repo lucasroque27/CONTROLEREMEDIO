@@ -18,8 +18,6 @@ HEADERS = {
     "Prefer": "return=representation"
 }
 
-SENHA_ADM = "1234"
-
 # --- 2. FUNÇÕES DE COMUNICAÇÃO ---
 def enviar_telegram(mensagem):
     try:
@@ -39,9 +37,8 @@ def api_get(tabela):
     except: pass
     return pd.DataFrame()
 
-# --- 3. ESTILO CSS (MENU AZUL COM LETRA BRANCA / CORPO BRANCO COM LETRA PRETA) ---
+# --- 3. ESTILO CSS (ALTO CONTRASTE) ---
 st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
-
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF !important; }
@@ -66,43 +63,49 @@ st.markdown("""
 # --- 4. BARRA LATERAL ---
 with st.sidebar:
     st.markdown("<h2 style='text-align: center;'>🏥 Gestão Saúde</h2>", unsafe_allow_html=True)
-    
     if st.button("⚡ Testar Telegram"):
-        enviar_telegram("🚀 O bot está funcionando, safado!")
-        st.success("Mensagem de teste enviada!")
-
+        enviar_telegram("🚀 Teste de conexão: OK!"); st.success("Enviado!")
+    
     st.markdown("---")
     if "admin" not in st.session_state: st.session_state.admin = False
     if not st.session_state.admin:
         pw = st.text_input("Senha ADM", type="password")
         if st.button("Liberar"):
-            if pw == SENHA_ADM: st.session_state.admin = True; st.rerun()
+            if pw == "1234": st.session_state.admin = True; st.rerun()
     else:
-        st.success("✨ Modo Edição Ativo")
         if st.button("Sair ADM"): st.session_state.admin = False; st.rerun()
-    
-    st.markdown("---")
+
     menu = st.radio("Navegação", ["📊 Estoque", "🩺 Histórico Médico", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
 
 # --- 5. LÓGICA PRINCIPAL ---
 if menu == "📊 Estoque":
     st.title("💊 Controle de Remédios")
     df = api_get("remedios")
+    
     if df.empty:
         st.info("Nenhum remédio cadastrado.")
     else:
         hoje = datetime.now()
+        if "alertas_enviados" not in st.session_state:
+            st.session_state.alertas_enviados = []
+
         for _, r in df.iterrows():
             dias_passados = (hoje - r['data_inicio']).days
             estoque_atual = max(0, int(r['qtd_total'] - (dias_passados * r['dose_diaria'])))
             dias_restantes = int(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
             data_fim = hoje + timedelta(days=dias_restantes)
 
+            # VIGIA DE 7 DIAS
+            if dias_restantes < 7 and r['nome'] not in st.session_state.alertas_enviados:
+                msg = f"⚠️ ALERTA: {r['nome']} ACABANDO!\n\nEstoque: {estoque_atual} un.\nDura apenas mais {dias_restantes} dias.\nAcaba em: {data_fim.strftime('%d/%m/%Y')}"
+                enviar_telegram(msg)
+                st.session_state.alertas_enviados.append(r['nome'])
+
             st.markdown(f"""
                 <div class="med-card">
                     <span style="font-size: 1.4em;"><b>{r['nome'].upper()}</b></span><br>
                     <p>📦 Estoque: <b>{estoque_atual} un.</b> | 🕒 Dose: <b>{r['dose_diaria']} p/ dia</b></p>
-                    <p style="font-size: 1.2em; color: {'#CC0000' if dias_restantes < 5 else '#006600'} !important;">
+                    <p style="font-size: 1.2em; color: {'#CC0000' if dias_restantes < 7 else '#006600'} !important;">
                         📅 Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b> ({dias_restantes} dias)
                     </p>
                 </div>
@@ -117,7 +120,7 @@ if menu == "📊 Estoque":
                             total_novo = estoque_atual + n_qtd
                             requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(total_novo), "data_inicio": str(hoje.date()), "preco": float(n_val)})
                             requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(n_val), "data_compra": str(hoje.date())})
-                            enviar_telegram(f"✅ REPOSIÇÃO: {r['nome']}\n📦 Total: {total_novo} un.\n💰 Valor: R$ {n_val:.2f}")
+                            enviar_telegram(f"✅ REPOSIÇÃO: {r['nome']}\n📦 Total atual: {total_novo} un.\n💰 Valor: R$ {n_val:.2f}")
                             st.success("Atualizado!"); time.sleep(1); st.cache_data.clear(); st.rerun()
 
 elif menu == "🩺 Histórico Médico":
@@ -148,12 +151,13 @@ elif menu == "➕ Cadastro":
                 if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
                     requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio":n,"valor":float(p),"data_compra":str(datetime.now().date())})
-                    enviar_telegram(f"🆕 NOVO REMÉDIO: {n}\n📦 Qtd: {q}")
+                    enviar_telegram(f"🆕 NOVO REMÉDIO: {n}\n📦 {q} unidades")
                     st.success("Salvo!"); time.sleep(1); st.cache_data.clear(); st.rerun()
             else:
-                m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
+                m, v, dt = st.text_input("Médico"), st.number_input("Valor", value=0.0)
+                dt_p = st.date_input("Data")
                 if st.form_submit_button("Salvar"):
-                    requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt)})
+                    requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt_p)})
                     enviar_telegram(f"🩺 NOVA CONSULTA: {m}")
                     st.success("Salvo!"); time.sleep(1); st.cache_data.clear(); st.rerun()
 
