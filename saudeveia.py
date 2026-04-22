@@ -9,7 +9,136 @@ URL_SUPABASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
 API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
 
 # Credenciais recuperadas do seu histórico
+TOKEN_TELEGRAM = "8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM"import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+import requests
+import time
+
+# --- 1. CONFIGURAÇÕES ---
+URL_SUPABASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
+API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
+
+# Credenciais recuperadas
 TOKEN_TELEGRAM = "8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM"
+CHAT_ID = "5256921022"
+
+HEADERS = {
+    "apikey": API_KEY,
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+}
+
+# --- 2. FUNÇÃO DE ENVIO (COM LOG DE ERRO) ---
+def enviar_telegram(mensagem):
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
+        res = requests.post(url, data={"chat_id": CHAT_ID, "text": mensagem})
+        return res.status_code == 200
+    except Exception as e:
+        st.error(f"Erro ao conectar com Telegram: {e}")
+        return False
+
+# --- 3. ESTILO CSS ---
+st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
+st.markdown("""
+    <style>
+    .stApp { background-color: #FFFFFF !important; }
+    [data-testid="stSidebar"] { background-color: #0A192F !important; }
+    [data-testid="stSidebar"] * { color: #FFFFFF !important; }
+    .med-card {
+        background-color: #F8F9FA !important;
+        border-radius: 15px; padding: 20px; margin-bottom: 20px;
+        border-left: 12px solid #3B82F6;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }
+    .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp span, .stApp label, .stMarkdown {
+        color: #000000 !important; font-weight: 600;
+    }
+    div.stButton > button { width: 100%; border-radius: 10px; background-color: #3B82F6 !important; color: white !important; font-weight: bold; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 4. BARRA LATERAL ---
+with st.sidebar:
+    st.markdown("<h2 style='text-align: center;'>🏥 Painel de Controle</h2>", unsafe_allow_html=True)
+    
+    # BOTÃO DE TESTE DIRETO
+    st.markdown("---")
+    st.markdown("⚡ **Teste de Conexão**")
+    if st.button("Enviar Mensagem de Teste"):
+        if enviar_telegram("🚀 Teste de conexão: O bot está ativo!"):
+            st.success("Mensagem enviada! Verifique seu Telegram.")
+        else:
+            st.error("Falha no envio. Verifique o Token/ID.")
+    st.markdown("---")
+    
+    if "admin" not in st.session_state: st.session_state.admin = False
+    if not st.session_state.admin:
+        pw = st.text_input("Senha ADM", type="password")
+        if st.button("Liberar"):
+            if pw == "1234": st.session_state.admin = True; st.rerun()
+    else:
+        st.success("Modo Edição Ativo")
+        if st.button("Sair ADM"): st.session_state.admin = False; st.rerun()
+
+    menu = st.radio("Menu", ["📊 Estoque", "🩺 Histórico", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
+
+# --- 5. LÓGICA PRINCIPAL (ESTOQUE) ---
+if menu == "📊 Estoque":
+    st.title("💊 Controle de Remédios")
+    df = requests.get(f"{URL_SUPABASE}remedios?select=*&order=id.desc", headers=HEADERS).json()
+    if not df:
+        st.info("Sem dados.")
+    else:
+        hoje = datetime.now()
+        for r in df:
+            data_ini = pd.to_datetime(r['data_inicio'])
+            dias_passados = (hoje - data_ini).days
+            estoque_atual = max(0, int(r['qtd_total'] - (dias_passados * r['dose_diaria'])))
+            dias_restantes = int(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
+            data_fim = hoje + timedelta(days=dias_restantes)
+
+            st.markdown(f"""
+                <div class="med-card">
+                    <span style="font-size: 1.4em;"><b>{r['nome'].upper()}</b></span><br>
+                    <p>📦 Estoque: <b>{estoque_atual} un.</b> | 🕒 Dose: <b>{r['dose_diaria']} p/ dia</b></p>
+                    <p style="color: {'#CC0000' if dias_restantes < 5 else '#006600'} !important;">
+                        📅 Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b> ({dias_restantes} dias)
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            if st.session_state.admin:
+                with st.expander(f"Repor {r['nome']}"):
+                    with st.form(f"f_{r['id']}"):
+                        n_qtd = st.number_input("Qtd nova", value=30)
+                        n_val = st.number_input("Preço", value=float(r['preco']))
+                        if st.form_submit_button("Repor"):
+                            novo_total = estoque_atual + n_qtd
+                            requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(novo_total), "data_inicio": str(hoje.date()), "preco": float(n_val)})
+                            requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(n_val), "data_compra": str(hoje.date())})
+                            enviar_telegram(f"✅ REPOSIÇÃO: {r['nome']}\n📦 Total: {novo_total} un.\n📅 Dura até: {(hoje + timedelta(days=int(novo_total/r['dose_diaria']))).strftime('%d/%m/%Y')}")
+                            st.rerun()
+
+# --- DEMAIS TELAS (RESUMIDAS PARA ECONOMIA) ---
+elif menu == "💰 Financeiro":
+    st.title("💰 Gastos")
+    compras = requests.get(f"{URL_SUPABASE}compras?select=*", headers=HEADERS).json()
+    if compras: st.dataframe(pd.DataFrame(compras)[['data_compra', 'nome_remedio', 'valor']])
+
+elif menu == "➕ Cadastro":
+    if st.session_state.admin:
+        with st.form("novo"):
+            n = st.text_input("Nome")
+            q = st.number_input("Qtd", value=30)
+            d = st.number_input("Dose/dia", value=1.0)
+            p = st.number_input("Preço", value=0.0)
+            if st.form_submit_button("Salvar"):
+                requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
+                enviar_telegram(f"🆕 CADASTRO: {n}\n📦 {q} un.")
+                st.rerun()
 CHAT_ID = "5256921022"
 
 HEADERS = {
