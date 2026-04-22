@@ -41,175 +41,153 @@ def api_patch(tabela, id_item, dados):
 def api_delete(tabela, id_item):
     requests.delete(f"{URL_SUPABASE}{tabela}?id=eq.{id_item}", headers=HEADERS)
 
-# --- 3. DESIGN E CORREÇÃO DO BOTÃO DE MENU ---
+# --- 3. DESIGN E CORES (MENU AZUL / LETRA BRANCA / CORPO BRANCO / LETRA PRETA) ---
 st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
 
 st.markdown("""
     <style>
-    /* FUNDO GERAL */
     .stApp { background-color: #F8F9FA !important; }
-
-    /* GARANTE QUE O BOTÃO DE MENU (SIDEBAR) SEJA VISÍVEL */
-    header[data-testid="stHeader"] {
-        background-color: rgba(255, 255, 255, 0.8) !important;
-        visibility: visible !important;
-    }
+    header[data-testid="stHeader"] { background-color: rgba(255, 255, 255, 0.9) !important; visibility: visible !important; }
     
-    /* ESTILIZAÇÃO DA BARRA LATERAL */
-    [data-testid="stSidebar"] {
-        background-color: #0A192F !important;
-    }
+    /* MENU LATERAL */
+    [data-testid="stSidebar"] { background-color: #0A192F !important; }
+    [data-testid="stSidebar"] * { color: #FFFFFF !important; }
     
-    [data-testid="stSidebar"] h2, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] span {
-        color: #FFFFFF !important;
-    }
-
-    /* CARDS DE CONTEÚDO (LETRA PRETA FORTE) */
+    /* CARDS DE REMÉDIO */
     .med-card {
         background-color: #FFFFFF !important;
         border-radius: 12px;
         padding: 20px;
         margin-bottom: 15px;
         border: 2px solid #E2E8F0;
-        border-left: 8px solid #3B82F6;
+        border-left: 10px solid #3B82F6;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
-
-    /* FORÇA TEXTO PRETO NO CORPO DO APP */
+    
+    /* TEXTO PRINCIPAL PRETO */
     .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp span, .stApp label, .stMarkdown {
         color: #000000 !important;
         font-weight: 600;
     }
-
-    /* BOTÕES */
-    div.stButton > button {
-        width: 100%;
-        border-radius: 8px;
-        background-color: #3B82F6 !important;
-        color: white !important;
-        font-weight: bold;
-    }
-
-    /* ESCONDER APENAS O MENU DE OPÇÕES DO STREAMLIT (LADO DIREITO) */
+    
+    div.stButton > button { width: 100%; border-radius: 8px; background-color: #3B82F6 !important; color: white !important; font-weight: bold; }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. BARRA LATERAL (MENU) ---
+# --- 4. MENU LATERAL ---
 with st.sidebar:
-    st.markdown("<h2 style='text-align: center; color: white !important;'>🏥 Painel Saúde</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🏥 Menu Saúde</h2>", unsafe_allow_html=True)
     st.markdown("---")
-    
     if "admin" not in st.session_state: st.session_state.admin = False
-    
     if not st.session_state.admin:
         pw = st.text_input("Senha ADM", type="password")
-        if st.button("Liberar Acesso"):
-            if pw == SENHA_ADM:
-                st.session_state.admin = True
-                st.rerun()
-            else: st.error("Senha incorreta")
+        if st.button("Liberar"):
+            if pw == SENHA_ADM: st.session_state.admin = True; st.rerun()
+            else: st.error("Senha Incorreta")
     else:
-        st.success("🔓 Modo Edição")
-        if st.button("Sair"):
-            st.session_state.admin = False
-            st.rerun()
-    
+        st.success("Modo Edição Ativo")
+        if st.button("Sair ADM"): st.session_state.admin = False; st.rerun()
     st.markdown("---")
-    menu = st.radio("Navegação", ["📊 Estoque", "🩺 Consultas", "💰 Gastos", "➕ Cadastro", "🗑️ Remover"])
+    menu = st.radio("Ir para:", ["📊 Estoque", "🩺 Histórico", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
 
-# --- 5. LÓGICA DAS TELAS ---
+# --- 5. TELAS ---
 
 if menu == "📊 Estoque":
-    st.title("💊 Estoque")
+    st.title("💊 Controle de Remédios")
     df = api_get("remedios")
     if df.empty:
-        st.info("Sistema vazio.")
+        st.info("Nenhum remédio cadastrado.")
     else:
         hoje = datetime.now()
         for _, r in df.iterrows():
-            dias_pados = (hoje - r['data_inicio']).days
-            estoque_atual = max(0, int(r['qtd_total'] - (dias_pados * r['dose_diaria'])))
-            dias_restantes = int(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
+            # CALCULO DE CONSUMO
+            dias_passados = (hoje - r['data_inicio']).days
+            consumo_ate_agora = dias_passados * r['dose_diaria']
+            estoque_atual = max(0, int(r['qtd_total'] - consumo_ate_agora))
             
+            # CALCULO DE QUANDO ACABA
+            if r['dose_diaria'] > 0:
+                dias_que_restam = int(estoque_atual / r['dose_diaria'])
+                data_fim = hoje + timedelta(days=dias_que_restam)
+            else:
+                dias_que_restam = 0
+                data_fim = hoje
+
             st.markdown(f"""
                 <div class="med-card">
-                    <span style="font-size: 1.2em; color: #000000 !important;"><b>{r['nome'].upper()}</b></span><br>
-                    <p style="margin-top: 10px; color: #000000 !important;">
-                        📦 Restam: <b>{estoque_atual} unidades</b><br>
-                        ⏳ Aproximadamente <b>{dias_restantes} dias</b><br>
-                        📅 Término: <b>{(hoje + timedelta(days=dias_restantes)).strftime('%d/%m/%Y')}</b>
-                    </p>
+                    <span style="font-size: 1.3em; color: #000000 !important;"><b>{r['nome'].upper()}</b></span><br><br>
+                    <span style="color: #000000 !important; font-size: 1.1em;">📦 Restam no estoque: <b>{estoque_atual} comprimidos</b></span><br>
+                    <span style="color: #000000 !important;">📅 Vai acabar em: <b style="color: {'#CC0000' if dias_que_restam < 5 else '#000000'} !important;">{data_fim.strftime('%d/%m/%Y')}</b></span><br>
+                    <span style="color: #000000 !important;">⏳ Duração: <b>{dias_que_restam} dias</b></span>
                 </div>
             """, unsafe_allow_html=True)
             
             if st.session_state.admin:
-                with st.expander(f"Gerenciar {r['nome']}"):
-                    adicao = st.number_input(f"Adicionar unidades", min_value=1, value=30, key=f"add_{r['id']}")
-                    if st.button("Salvar", key=f"btn_{r['id']}"):
-                        nova_qtd = estoque_atual + adicao
-                        api_patch("remedios", r['id'], {"qtd_total": int(nova_qtd), "data_inicio": str(hoje.date())})
+                with st.expander(f"➕ Adicionar mais {r['nome']}"):
+                    nova_compra = st.number_input(f"Quantos comprimidos vieram na caixa nova?", min_value=1, value=30, key=f"in_{r['id']}")
+                    if st.button("Confirmar Reposição", key=f"bt_{r['id']}"):
+                        # Soma o que sobrou com o que comprou e reseta a data
+                        nova_qtd_final = estoque_atual + nova_compra
+                        api_patch("remedios", r['id'], {"qtd_total": int(nova_qtd_final), "data_inicio": str(hoje.date())})
                         api_post("compras", {"nome_remedio": r['nome'], "valor": float(r['preco']), "data_compra": str(hoje.date())})
-                        st.success("Feito!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
+                        st.success("Estoque atualizado!"); time.sleep(1); st.cache_data.clear(); st.rerun()
 
-elif menu == "🩺 Consultas":
-    st.title("🩺 Consultas")
+elif menu == "🩺 Histórico":
+    st.title("🩺 Histórico de Consultas")
     df_c = api_get("consultas")
     if not df_c.empty:
         for _, c in df_c.iterrows():
             st.markdown(f"""
-                <div class="med-card">
+                <div class="med-card" style="border-left-color: #10B981;">
                     <span style="color: #000000 !important;">{c['data_consulta'].strftime('%d/%m/%Y')}</span><br>
                     <span style="font-size: 1.1em; color: #000000 !important;"><b>{c['medico']}</b></span><br>
                     <span style="color: #166534; font-weight: bold;">R$ {float(c.get('valor', 0)):.2f}</span>
                 </div>
             """, unsafe_allow_html=True)
 
-elif menu == "💰 Gastos":
-    st.title("💰 Gastos")
-    df_rem = api_get("compras")
-    df_con = api_get("consultas")
-    t1 = df_rem['valor'].sum() if not df_rem.empty else 0
-    t2 = df_con['valor'].sum() if not df_con.empty else 0
+elif menu == "💰 Financeiro":
+    st.title("💰 Gastos Totais")
+    df_r = api_get("compras")
+    df_c = api_get("consultas")
+    t1, t2 = (df_r['valor'].sum() if not df_r.empty else 0), (df_c['valor'].sum() if not df_c.empty else 0)
     st.markdown(f"""
         <div class="med-card" style="text-align: center;">
             <h1 style="color: #000000 !important;">R$ {t1+t2:.2f}</h1>
             <p style="color: #000000 !important;">Remédios: R$ {t1:.2f} | Consultas: R$ {t2:.2f}</p>
         </div>
     """, unsafe_allow_html=True)
+    if not df_r.empty:
+        st.subheader("Histórico de Compras")
+        st.write(df_r[['data_compra', 'nome_remedio', 'valor']])
 
 elif menu == "➕ Cadastro":
     if not st.session_state.admin: st.warning("Acesse o modo ADM.")
     else:
-        tipo = st.selectbox("Tipo:", ["Medicamento", "Consulta"])
-        with st.form("cad"):
-            if tipo == "Medicamento":
-                n = st.text_input("Nome")
-                q = st.number_input("Qtd", value=30)
-                d = st.number_input("Dose", value=1.0)
-                p = st.number_input("Preço", value=0.0)
+        tipo = st.selectbox("O que cadastrar?", ["Remédio", "Consulta"])
+        with st.form("c"):
+            if tipo == "Remédio":
+                n, q = st.text_input("Nome"), st.number_input("Qtd na Caixa", value=30)
+                d, p = st.number_input("Doses por dia (ex: 4)", value=1.0), st.number_input("Preço", value=0.0)
                 if st.form_submit_button("Salvar"):
                     api_post("remedios", {"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
                     api_post("compras", {"nome_remedio":n,"valor":float(p),"data_compra":str(datetime.now().date())})
-                    st.success("OK!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
+                    st.success("Salvo!"); time.sleep(1); st.cache_data.clear(); st.rerun()
             else:
-                m = st.text_input("Médico")
-                v = st.number_input("Valor", value=0.0)
-                dt = st.date_input("Data")
+                m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
                 if st.form_submit_button("Salvar"):
                     api_post("consultas", {"medico":m, "valor":float(v), "data_consulta":str(dt)})
-                    st.success("OK!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
+                    st.success("Salvo!"); time.sleep(1); st.cache_data.clear(); st.rerun()
 
 elif menu == "🗑️ Remover":
     if not st.session_state.admin: st.warning("Acesse o modo ADM.")
     else:
-        tabela = st.selectbox("Categoria:", ["remedios", "consultas", "compras"])
-        df_del = api_get(tabela)
-        if not df_del.empty:
-            col = 'nome' if tabela == 'remedios' else 'medico' if tabela == 'consultas' else 'nome_remedio'
-            item = st.selectbox("Escolha:", df_del[col].tolist())
-            id_it = df_del[df_del[col] == item]['id'].values[0]
+        tab = st.selectbox("Tabela:", ["remedios", "consultas", "compras"])
+        df_d = api_get(tab)
+        if not df_d.empty:
+            c = 'nome' if tab == 'remedios' else 'medico' if tab == 'consultas' else 'nome_remedio'
+            item = st.selectbox("Item:", df_d[c].tolist())
+            id_i = df_d[df_d[c] == item]['id'].values[0]
             if st.button("Remover"):
-                api_delete(tabela, id_it)
-                st.success("Removido!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
+                api_delete(tab, id_i); st.success("Removido!"); time.sleep(1); st.cache_data.clear(); st.rerun()
