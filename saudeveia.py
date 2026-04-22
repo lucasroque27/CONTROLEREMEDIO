@@ -41,86 +41,102 @@ def api_patch(tabela, id_item, dados):
 def api_delete(tabela, id_item):
     requests.delete(f"{URL_SUPABASE}{tabela}?id=eq.{id_item}", headers=HEADERS)
 
-# --- 3. CONFIGURAÇÃO VISUAL (DESIGN DE APP - ALTO CONTRASTE) ---
+# --- 3. DESIGN DO APLICATIVO (UI/UX) ---
 st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
 
 st.markdown("""
     <style>
-    /* 1. Força Fundo Branco em Tudo */
-    .stApp, [data-testid="stVerticalBlock"], [data-testid="stExpander"], .st-emotion-cache-1kyx60n {
-        background-color: #FFFFFF !important;
+    /* FUNDO GERAL */
+    .stApp { background-color: #F8F9FA !important; }
+
+    /* ESTILIZAÇÃO DA BARRA LATERAL (SIDEBAR) */
+    [data-testid="stSidebar"] {
+        background-color: #0A192F !important; /* Azul Marinho Profundo */
+        border-right: 1px solid #1E293B;
     }
     
-    /* 2. FORÇA LETRA PRETA ABSOLUTA EM TUDO (*) */
-    * {
-        color: #000000 !important;
+    /* Texto da Sidebar */
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label {
+        color: #FFFFFF !important;
+        font-family: 'Inter', sans-serif;
     }
 
-    /* 3. Ajuste para Títulos e Textos Principais */
-    h1, h2, h3, b, strong, p, span, label, .stMarkdown {
-        color: #000000 !important;
-        font-weight: 700 !important;
+    /* Estilo dos Rádios (Navegação) na Sidebar */
+    [data-testid="stSidebar"] .st-emotion-cache-17l6f7z, [data-testid="stSidebar"] .st-emotion-cache-6q9sum {
+        background-color: transparent !important;
+        color: white !important;
     }
 
-    /* 4. Cards Modernos com Borda Escura para não "sumir" */
+    /* CARDS DE CONTEÚDO (ESTOQUE/CONSULTAS) */
     .med-card {
-        background-color: #F8F9FA !important;
+        background-color: #FFFFFF !important;
         border-radius: 12px;
-        padding: 18px;
+        padding: 20px;
         margin-bottom: 15px;
-        border: 2px solid #1E3A8A !important; /* Borda azul marinho forte */
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: 1px solid #E2E8F0;
+        border-left: 8px solid #3B82F6; /* Borda lateral azul */
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
-    
-    /* 5. Cores de Status (Mais fortes para leitura fácil) */
-    .status-critico { color: #CC0000 !important; font-weight: 900 !important; font-size: 1.2em; }
-    .status-ok { color: #006600 !important; font-weight: 900 !important; font-size: 1.2em; }
 
-    /* 6. Botões Grandes e Escuros */
+    /* TEXTOS NO CORPO DO APP (SEMPRE PRETO) */
+    .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp span, .stApp label {
+        color: #1E293B !important;
+        font-weight: 600;
+    }
+
+    /* BOTÕES */
     div.stButton > button {
         width: 100%;
-        border-radius: 10px;
-        height: 3.5em;
-        background-color: #001A3D !important;
-        color: #FFFFFF !important; /* Letra branca no botão escuro */
-        font-weight: bold;
+        border-radius: 8px;
+        background-color: #3B82F6 !important;
+        color: white !important;
         border: none;
+        padding: 10px;
+        font-weight: bold;
+    }
+    div.stButton > button:hover {
+        background-color: #2563EB !important;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
     }
 
-    /* Esconder o menu padrão do Streamlit */
+    /* ESCONDER ELEMENTOS DESNECESSÁRIOS */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    header {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 4. CONTROLE DE ACESSO ---
-if "admin" not in st.session_state: st.session_state.admin = False
+# --- 4. BARRA LATERAL (MENU) ---
 with st.sidebar:
-    st.title("Menu")
+    st.markdown("<h2 style='text-align: center;'>🏥 Painel Saúde</h2>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    if "admin" not in st.session_state: st.session_state.admin = False
+    
     if not st.session_state.admin:
-        pw = st.text_input("🔑 Senha ADM", type="password")
-        if st.button("Liberar Edição"):
-            if pw == SENHA_ADM: 
+        st.markdown("🔒 **Área Restrita**")
+        pw = st.text_input("Senha ADM", type="password", help="Insira a senha para habilitar edições")
+        if st.button("Liberar Acesso"):
+            if pw == SENHA_ADM:
                 st.session_state.admin = True
-                st.cache_data.clear()
                 st.rerun()
-            else: st.error("Senha Incorreta")
+            else: st.error("Senha incorreta")
     else:
-        st.success("✨ Administrador Ativo")
-        if st.button("🔒 Sair"): 
+        st.success("🔓 Modo Edição Ativo")
+        if st.button("Sair do Modo ADM"):
             st.session_state.admin = False
-            st.cache_data.clear()
             st.rerun()
+    
+    st.markdown("---")
+    menu = st.radio("Navegação", ["📊 Estoque", "🩺 Consultas", "💰 Gastos", "➕ Cadastro", "🗑️ Remover"])
 
-menu = st.sidebar.radio("Navegação:", ["📊 Estoque", "🩺 Consultas", "💰 Gastos", "➕ Cadastrar", "🗑️ Remover"])
-
-# --- 5. TELAS ---
+# --- 5. LÓGICA DAS TELAS ---
 
 if menu == "📊 Estoque":
-    st.header("💊 Estoque de Medicamentos")
+    st.title("💊 Controle de Medicamentos")
     df = api_get("remedios")
     if df.empty:
-        st.info("Nada cadastrado ainda.")
+        st.info("Nenhum remédio no sistema.")
     else:
         hoje = datetime.now()
         for _, r in df.iterrows():
@@ -128,88 +144,100 @@ if menu == "📊 Estoque":
             estoque_atual = max(0, int(r['qtd_total'] - (dias_pados * r['dose_diaria'])))
             dias_restantes = int(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
             
-            # Título em Preto Forte
-            with st.expander(f"📦 {r['nome'].upper()} - Restam {estoque_atual}"):
-                st.markdown(f"""
-                    <div class="med-card">
-                        <b style="font-size: 1.2em;">{r['nome'].upper()}</b><br><br>
-                        <span class="{'status-critico' if dias_restantes <= 7 else 'status-ok'}">
-                            ESTOQUE: {estoque_atual} unidades
-                        </span><br>
-                        <span>Duração: Aprox. <b>{dias_restantes} dias</b></span><br>
-                        <span>Acaba em: <b>{(hoje + timedelta(days=dias_restantes)).strftime('%d/%m/%Y')}</b></span>
+            st.markdown(f"""
+                <div class="med-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 1.2em; color: #1E293B;"><b>{r['nome'].upper()}</b></span>
+                        <span style="background: {'#FEE2E2' if dias_restantes <= 7 else '#DCFCE7'}; 
+                                     color: {'#991B1B' if dias_restantes <= 7 else '#166534'}; 
+                                     padding: 4px 12px; border-radius: 20px; font-size: 0.9em; font-weight: bold;">
+                            {estoque_atual} un.
+                        </span>
                     </div>
-                """, unsafe_allow_html=True)
-                
-                if st.session_state.admin:
-                    st.write("---")
-                    adicao = st.number_input(f"Somar ao {r['nome']}", min_value=1, value=30, key=f"add_{r['id']}")
-                    if st.button("Confirmar Soma", key=f"btn_{r['id']}"):
+                    <p style="margin-top: 10px; color: #64748B; font-size: 0.95em;">
+                        ⏳ Dura aprox. <b>{dias_restantes} dias</b><br>
+                        📅 Término previsto: <b>{(hoje + timedelta(days=dias_restantes)).strftime('%d/%m/%Y')}</b>
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            if st.session_state.admin:
+                with st.expander(f"⚙️ Gerenciar {r['nome']}"):
+                    adicao = st.number_input(f"Somar unidades", min_value=1, value=30, key=f"add_{r['id']}")
+                    if st.button("Salvar Reabastecimento", key=f"btn_{r['id']}"):
                         nova_qtd = estoque_atual + adicao
                         api_patch("remedios", r['id'], {"qtd_total": int(nova_qtd), "data_inicio": str(hoje.date())})
                         api_post("compras", {"nome_remedio": r['nome'], "valor": float(r['preco']), "data_compra": str(hoje.date())})
-                        st.success("Atualizado!"); time.sleep(1); st.cache_data.clear(); st.rerun()
+                        st.success("Estoque Atualizado!")
+                        time.sleep(0.5); st.cache_data.clear(); st.rerun()
 
 elif menu == "🩺 Consultas":
-    st.header("🩺 Histórico Médico")
+    st.title("🩺 Histórico Médico")
     df_c = api_get("consultas")
     if not df_c.empty:
         for _, c in df_c.iterrows():
             st.markdown(f"""
-                <div class="med-card">
-                    <b>Data: {c['data_consulta'].strftime('%d/%m/%Y')}</b><br>
-                    <span style="font-size: 1.1em;">Médico: <b>{c['medico']}</b></span><br>
-                    <span>Valor: R$ {float(c.get('valor', 0)):.2f}</span>
+                <div class="med-card" style="border-left-color: #10B981;">
+                    <span style="color: #64748B; font-size: 0.85em;">{c['data_consulta'].strftime('%d/%m/%Y')}</span><br>
+                    <span style="font-size: 1.1em; color: #1E293B;"><b>{c['medico']}</b></span><br>
+                    <span style="color: #059669; font-weight: bold;">R$ {float(c.get('valor', 0)):.2f}</span>
                 </div>
             """, unsafe_allow_html=True)
+    else: st.info("Sem consultas registradas.")
 
 elif menu == "💰 Gastos":
-    st.header("💰 Financeiro")
-    df_compras = api_get("compras")
-    df_consultas = api_get("consultas")
-    t1 = df_compras['valor'].sum() if not df_compras.empty else 0
-    t2 = df_consultas['valor'].sum() if not df_consultas.empty else 0
+    st.title("💰 Financeiro")
+    df_rem = api_get("compras")
+    df_con = api_get("consultas")
+    t1 = df_rem['valor'].sum() if not df_rem.empty else 0
+    t2 = df_con['valor'].sum() if not df_con.empty else 0
     
     st.markdown(f"""
-        <div class="med-card" style="text-align: center; border-left: 10px solid #006600 !important;">
-            <h2 style="margin:0;">Total: R$ {t1+t2:.2f}</h2>
-            <p>Remédios: R$ {t1:.2f} | Consultas: R$ {t2:.2f}</p>
+        <div class="med-card" style="text-align: center; border-left: none; border-top: 5px solid #3B82F6;">
+            <p style="color: #64748B; margin-bottom: 5px;">Investimento Total</p>
+            <h1 style="color: #1E293B; margin: 0;">R$ {t1+t2:.2f}</h1>
+            <div style="display: flex; justify-content: space-around; margin-top: 20px;">
+                <div><small>Remédios</small><br><b style="color: #3B82F6;">R$ {t1:.2f}</b></div>
+                <div><small>Consultas</small><br><b style="color: #10B981;">R$ {t2:.2f}</b></div>
+            </div>
         </div>
     """, unsafe_allow_html=True)
 
-elif menu == "➕ Cadastrar":
-    if not st.session_state.admin: 
-        st.warning("⚠️ Use a senha para cadastrar.")
+elif menu == "➕ Cadastro":
+    if not st.session_state.admin:
+        st.warning("Acesse o modo administrador na barra lateral para cadastrar.")
     else:
-        opcao = st.selectbox("Tipo:", ["Remédio", "Consulta"])
-        with st.form("f_cad"):
-            if opcao == "Remédio":
-                n = st.text_input("Nome")
-                q = st.number_input("Qtd total", value=30)
-                d = st.number_input("Dose/dia", value=1.0)
-                p = st.number_input("Preço", value=0.0)
-                if st.form_submit_button("Salvar"):
+        st.title("➕ Novo Cadastro")
+        tipo = st.selectbox("O que deseja registrar?", ["Medicamento", "Consulta"])
+        with st.form("cad_form"):
+            if tipo == "Medicamento":
+                n = st.text_input("Nome do Remédio")
+                q = st.number_input("Qtd na Caixa", value=30)
+                d = st.number_input("Dose Diária", value=1.0)
+                p = st.number_input("Preço da Caixa", value=0.0)
+                if st.form_submit_button("Finalizar Cadastro"):
                     api_post("remedios", {"nome":n, "qtd_total":int(q), "dose_diaria":float(d), "preco":float(p), "data_inicio":str(datetime.now().date())})
                     api_post("compras", {"nome_remedio":n, "valor":float(p), "data_compra":str(datetime.now().date())})
-                    st.success("Salvo!"); time.sleep(1); st.cache_data.clear(); st.rerun()
+                    st.success("Cadastrado!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
             else:
-                m = st.text_input("Médico")
-                v = st.number_input("Valor", value=0.0)
+                m = st.text_input("Médico / Especialidade")
+                v = st.number_input("Valor pago", value=0.0)
                 dt = st.date_input("Data")
-                if st.form_submit_button("Salvar"):
+                if st.form_submit_button("Registrar Consulta"):
                     api_post("consultas", {"medico":m, "valor":float(v), "data_consulta":str(dt)})
-                    st.success("Salvo!"); time.sleep(1); st.cache_data.clear(); st.rerun()
+                    st.success("Registrado!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
 
 elif menu == "🗑️ Remover":
     if not st.session_state.admin:
-        st.warning("⚠️ Acesso restrito.")
+        st.warning("Acesso restrito.")
     else:
-        tab = st.selectbox("Local:", ["remedios", "consultas", "compras"])
-        df_d = api_get(tab)
-        if not df_d.empty:
-            col_nome = 'nome' if tab == 'remedios' else 'medico' if tab == 'consultas' else 'nome_remedio'
-            escolha = st.selectbox("Item:", df_d[col_nome].tolist())
-            id_item = df_d[df_d[col_nome] == escolha]['id'].values[0]
-            if st.button("🔴 EXCLUIR"):
-                api_delete(tab, id_item)
-                st.success("Removido!"); time.sleep(1); st.cache_data.clear(); st.rerun()
+        st.title("🗑️ Remover Registro")
+        tabela = st.selectbox("Categoria:", ["remedios", "consultas", "compras"])
+        df_del = api_get(tabela)
+        if not df_del.empty:
+            col = 'nome' if tabela == 'remedios' else 'medico' if tabela == 'consultas' else 'nome_remedio'
+            item = st.selectbox("Escolha o item:", df_del[col].tolist())
+            id_it = df_del[df_del[col] == item]['id'].values[0]
+            if st.button("Confirmar Exclusão"):
+                api_delete(tabela, id_it)
+                st.success("Excluído!"); time.sleep(0.5); st.cache_data.clear(); st.rerun()
