@@ -1,528 +1,225 @@
-import time
-from datetime import datetime, timedelta
-
-import pandas as pd
-import requests
 import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+import requests
+import time
 
-
+# --- 1. CONFIGURAÇÕES (SUPABASE E TELEGRAM) ---
 URL_SUPABASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
 API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
+
 TOKEN_TELEGRAM = "8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM"
 CHAT_ID = "5256921022"
-ADMIN_PASSWORD = "1234"
 
 HEADERS = {
     "apikey": API_KEY,
     "Authorization": f"Bearer {API_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "return=representation",
+    "Prefer": "return=representation"
 }
 
-st.set_page_config(page_title="Gestao Saude", page_icon="💊", layout="centered")
+SENHA_ADM = "1234"
 
-
-def init_state():
-    st.session_state.setdefault("admin", False)
-    st.session_state.setdefault("alertas_enviados", {})
-
-
-def render_css():
-    st.markdown(
-        """
-        <style>
-        .stApp {
-            background: linear-gradient(180deg, #f7fbff 0%, #edf4ff 100%) !important;
-        }
-
-        header[data-testid="stHeader"] {
-            background: rgba(255, 255, 255, 0.92) !important;
-        }
-
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #dcebff 0%, #cfe2ff 100%) !important;
-            border-right: 1px solid #bfd4ee;
-        }
-
-        [data-testid="stSidebar"] * {
-            color: #12324a !important;
-        }
-
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-        }
-
-        h1, h2, h3, label {
-            color: #12324a !important;
-        }
-
-        div.stButton > button {
-            width: 100%;
-            border-radius: 12px;
-            background: linear-gradient(180deg, #69abff 0%, #4b91f1 100%) !important;
-            color: white !important;
-            border: none !important;
-            font-weight: 700;
-        }
-
-        div.stButton > button:hover {
-            background: linear-gradient(180deg, #7ab5ff 0%, #5ca0f8 100%) !important;
-        }
-
-        .stTextInput input,
-        .stNumberInput input,
-        .stDateInput input,
-        .stSelectbox > div > div,
-        div[data-baseweb="input"] > div,
-        div[data-baseweb="base-input"] > div {
-            background-color: white !important;
-            color: #12324a !important;
-            border-radius: 12px !important;
-        }
-
-        .med-box {
-            background: white;
-            border: 1px solid #dbe8f6;
-            border-left: 8px solid #5b9dff;
-            border-radius: 18px;
-            padding: 18px 18px 10px 18px;
-            margin-bottom: 18px;
-            box-shadow: 0 8px 22px rgba(44, 101, 163, 0.08);
-        }
-
-        .med-box.alerta {
-            border-left-color: #ff8a3d;
-            background: #fff8ef;
-        }
-
-        .med-title {
-            font-size: 1.45rem;
-            font-weight: 800;
-            color: #12324a;
-            margin-bottom: 8px;
-        }
-
-        .med-line {
-            font-size: 1rem;
-            color: #1f4766;
-            margin-bottom: 6px;
-        }
-
-        .med-ok {
-            color: #177245;
-            font-weight: 700;
-            margin-top: 8px;
-        }
-
-        .med-alert {
-            color: #c0392b;
-            font-weight: 700;
-            margin-top: 8px;
-        }
-
-        .med-warning {
-            color: #b85c00;
-            font-weight: 700;
-            margin-top: 8px;
-        }
-
-        #MainMenu { visibility: hidden; }
-        footer { visibility: hidden; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
+# --- 2. FUNÇÕES DE COMUNICAÇÃO ---
 def enviar_telegram(mensagem):
     try:
         url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
         requests.post(url, data={"chat_id": CHAT_ID, "text": mensagem}, timeout=5)
-    except requests.RequestException:
-        pass
+    except: pass
 
-
-def tratar_datas(df):
-    if df.empty:
-        return df
-
-    for col in ["data_inicio", "data_consulta", "data_compra"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
-    return df
-
-
-@st.cache_data(ttl=60)
 def api_get(tabela):
     try:
-        res = requests.get(
-            f"{URL_SUPABASE}{tabela}?select=*&order=id.desc",
-            headers=HEADERS,
-            timeout=10,
-        )
-        res.raise_for_status()
-        return tratar_datas(pd.DataFrame(res.json()))
-    except requests.RequestException as e:
-        st.warning(f"Nao foi possivel carregar {tabela}: {e}")
-        return pd.DataFrame()
+        res = requests.get(f"{URL_SUPABASE}{tabela}?select=*&order=id.desc", headers=HEADERS)
+        if res.status_code == 200:
+            df = pd.DataFrame(res.json())
+            for col in ['data_inicio', 'data_consulta', 'data_compra']:
+                if not df.empty and col in df.columns:
+                    df[col] = pd.to_datetime(df[col])
+            return df
+    except: pass
+    return pd.DataFrame()
 
+# --- 3. ESTILO CSS (NOVO VISUAL "CLEAN" - AZUL CLARINHO) ---
+st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
 
-def api_write(method, endpoint, payload=None):
-    try:
-        res = requests.request(
-            method=method,
-            url=f"{URL_SUPABASE}{endpoint}",
-            headers=HEADERS,
-            json=payload,
-            timeout=10,
-        )
-        res.raise_for_status()
-        api_get.clear()
-        return True
-    except requests.RequestException as e:
-        st.error(f"Erro ao salvar no Supabase: {e}")
-        return False
+st.markdown("""
+    <style>
+    /* FUNDO DO APP TOTALMENTE BRANCO */
+    .stApp { background-color: #FFFFFF !important; }
 
+    /* MENU LATERAL (SIDEBAR) - AZUL BEM CLARINHO */
+    [data-testid="stSidebar"] {
+        background-color: #E6F0FF !important; /* Azul clarinho */
+        border-right: 1px solid #C2D6F0; /* Borda suave */
+    }
+    
+    /* FORÇA LETRA PRETA NO MENU (PARA VISIBILIDADE) */
+    [data-testid="stSidebar"] * {
+        color: #000000 !important;
+        font-weight: 600;
+    }
 
-def calcular_estoque(remedio, hoje):
-    data_inicio = remedio.get("data_inicio")
-    qtd_total = int(remedio.get("qtd_total", 0) or 0)
-    dose_diaria = float(remedio.get("dose_diaria", 0) or 0)
+    /* BOTÃO DE MENU (HEADER) */
+    header[data-testid="stHeader"] {
+        background-color: rgba(255, 255, 255, 0.9) !important;
+        visibility: visible !important;
+    }
 
-    if pd.isna(data_inicio):
-        data_inicio = hoje
+    /* CARDS DE REMÉDIO NA TELA PRINCIPAL */
+    .med-card {
+        background-color: #F8F9FA !important; /* Cinza muito claro */
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid #E2E8F0;
+        border-left: 12px solid #3B82F6; /* Borda de destaque azul */
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
 
-    dias_passados = max(0, (hoje.date() - data_inicio.date()).days)
-    consumido = int(dias_passados * dose_diaria)
-    estoque_atual = max(0, qtd_total - consumido)
-    dias_restantes = int(estoque_atual / dose_diaria) if dose_diaria > 0 else 0
-    data_fim = hoje + timedelta(days=dias_restantes)
-    return estoque_atual, dias_restantes, data_fim
+    /* TEXTO NA TELA PRINCIPAL (SEMPRE PRETO) */
+    .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp span, .stApp label, .stMarkdown {
+        color: #000000 !important;
+        font-weight: 600;
+    }
 
+    /* BOTÕES PREENCHIDOS DE AZUL */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 10px;
+        background-color: #3B82F6 !important;
+        color: white !important;
+        font-weight: bold;
+        height: 3em;
+    }
 
-def alerta_estoque(remedio, estoque_atual, dias_restantes, data_fim):
-    if dias_restantes >= 7:
-        return
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
 
-    alerta_id = f"{remedio['id']}-{data_fim.strftime('%Y-%m-%d')}"
-    if alerta_id in st.session_state.alertas_enviados:
-        return
-
-    msg = (
-        f"ALERTA: {remedio['nome']} acabando!\n\n"
-        f"Estoque: {estoque_atual} un.\n"
-        f"Restam {dias_restantes} dias.\n"
-        f"Acaba em: {data_fim.strftime('%d/%m/%Y')}"
-    )
-    enviar_telegram(msg)
-    st.session_state.alertas_enviados[alerta_id] = True
-
-
-def render_sidebar():
-    with st.sidebar:
-        st.markdown("<h2 style='text-align:center;'>Gestao Saude</h2>", unsafe_allow_html=True)
-        st.markdown("---")
-
-        if not st.session_state.admin:
-            senha = st.text_input("Senha ADM", type="password")
-            if st.button("Liberar"):
-                if senha == ADMIN_PASSWORD:
-                    st.session_state.admin = True
-                    st.rerun()
-                else:
-                    st.error("Senha invalida.")
-        else:
-            st.success("Modo editor ativo")
-            if st.button("Sair ADM"):
-                st.session_state.admin = False
+# --- 4. BARRA LATERAL ---
+with st.sidebar:
+    st.markdown("<h2 style='text-align: center; color: black !important;'>Gestão Saúde</h2>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    if "admin" not in st.session_state: st.session_state.admin = False
+    
+    if not st.session_state.admin:
+        st.markdown("🔒 **Acesso ADM**")
+        pw = st.text_input("Senha", type="password")
+        if st.button("Liberar"):
+            if pw == SENHA_ADM:
+                st.session_state.admin = True
                 st.rerun()
-
-        st.markdown("---")
-        return st.radio(
-            "Navegacao",
-            ["Estoque", "Historico Medico", "Financeiro", "Cadastro", "Remover"],
-        )
-
-
-def render_card(remedio, estoque_atual, dias_restantes, data_fim):
-    precisa_receita = bool(remedio.get("precisa_receita", False))
-    receita_texto = "Sim" if precisa_receita else "Nao"
-    card_class = "med-box alerta" if precisa_receita and dias_restantes < 7 else "med-box"
-    data_class = "med-alert" if dias_restantes < 7 else "med-ok"
-    aviso_html = ""
-
-    if precisa_receita and dias_restantes < 7:
-        aviso_html = '<div class="med-warning">Atencao: este remedio precisa de receita e esta perto de acabar.</div>'
-
-    html = f"""
-    <div class="{card_class}">
-        <div class="med-title">{str(remedio['nome']).upper()}</div>
-        <div class="med-line">Estoque: <b>{estoque_atual} un.</b> | Dose: <b>{remedio['dose_diaria']} p/ dia</b></div>
-        <div class="med-line">Preco atual: <b>R$ {float(remedio.get('preco', 0) or 0):.2f}</b></div>
-        <div class="med-line">Precisa de receita: <b>{receita_texto}</b></div>
-        {aviso_html}
-        <div class="{data_class}">Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b> ({dias_restantes} dias)</div>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
-
-def tela_estoque():
-    st.title("Controle de Remedios")
-    df = api_get("remedios")
-
-    if df.empty:
-        st.info("Nenhum remedio cadastrado.")
-        return
-
-    c1, c2 = st.columns([1.5, 1.0])
-    with c1:
-        filtro_receita = st.selectbox(
-            "Filtrar por receita",
-            ["Todos", "So com receita", "So sem receita"],
-        )
-    with c2:
-        mostrar_alertas = st.checkbox("Mostrar so os que estao acabando")
-
-    hoje = datetime.now()
-    exibidos = 0
-
-    for _, remedio in df.iterrows():
-        estoque_atual, dias_restantes, data_fim = calcular_estoque(remedio, hoje)
-        alerta_estoque(remedio, estoque_atual, dias_restantes, data_fim)
-        precisa_receita = bool(remedio.get("precisa_receita", False))
-
-        if filtro_receita == "So com receita" and not precisa_receita:
-            continue
-        if filtro_receita == "So sem receita" and precisa_receita:
-            continue
-        if mostrar_alertas and dias_restantes >= 7:
-            continue
-
-        exibidos += 1
-        render_card(remedio, estoque_atual, dias_restantes, data_fim)
-
-        if st.session_state.admin:
-            with st.expander(f"Repor {remedio['nome']}"):
-                with st.form(f"reposicao_{remedio['id']}"):
-                    qtd_comprada = st.number_input(
-                        "Quantidade comprada agora",
-                        min_value=1,
-                        value=30,
-                        step=1,
-                        key=f"qtd_{remedio['id']}",
-                    )
-                    preco_compra = st.number_input(
-                        "Preco pago nesta compra",
-                        min_value=0.0,
-                        value=float(remedio.get("preco", 0) or 0),
-                        step=0.01,
-                        key=f"preco_{remedio['id']}",
-                    )
-                    precisa_receita_novo = st.checkbox(
-                        "Precisa de receita",
-                        value=precisa_receita,
-                        key=f"receita_{remedio['id']}",
-                    )
-
-                    if st.form_submit_button("Confirmar reposicao"):
-                        total_novo = estoque_atual + int(qtd_comprada)
-
-                        ok_remedio = api_write(
-                            "PATCH",
-                            f"remedios?id=eq.{remedio['id']}",
-                            {
-                                "qtd_total": total_novo,
-                                "preco": float(preco_compra),
-                                "precisa_receita": bool(precisa_receita_novo),
-                                "data_inicio": str(hoje.date()),
-                            },
-                        )
-
-                        ok_compra = api_write(
-                            "POST",
-                            "compras",
-                            {
-                                "nome_remedio": remedio["nome"],
-                                "valor": float(preco_compra),
-                                "data_compra": str(hoje.date()),
-                            },
-                        )
-
-                        if ok_remedio and ok_compra:
-                            enviar_telegram(
-                                f"REPOSICAO: {remedio['nome']}\n"
-                                f"Qtd comprada: {int(qtd_comprada)}\n"
-                                f"Novo estoque: {total_novo} un.\n"
-                                f"Valor pago: R$ {preco_compra:.2f}"
-                            )
-                            st.success("Reposicao registrada com sucesso.")
-                            time.sleep(1)
-                            st.rerun()
-
-    if exibidos == 0:
-        st.info("Nenhum remedio encontrado com esse filtro.")
-
-
-def tela_historico():
-    st.title("Consultas Realizadas")
-    df = api_get("consultas")
-
-    if df.empty:
-        st.info("Nenhuma consulta cadastrada.")
-        return
-
-    for _, consulta in df.iterrows():
-        data = consulta.get("data_consulta")
-        data_fmt = data.strftime("%d/%m/%Y") if pd.notna(data) else "Sem data"
-        valor = float(consulta.get("valor", 0) or 0)
-        medico = consulta.get("medico", "Nao informado")
-
-        st.info(f"{data_fmt} | Dr(a). {medico} | R$ {valor:.2f}")
-
-
-def tela_financeiro():
-    st.title("Resumo Financeiro")
-
-    df_compras = api_get("compras")
-    df_consultas = api_get("consultas")
-
-    total_remedios = df_compras["valor"].sum() if not df_compras.empty and "valor" in df_compras.columns else 0
-    total_consultas = df_consultas["valor"].sum() if not df_consultas.empty and "valor" in df_consultas.columns else 0
-    total_geral = total_remedios + total_consultas
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Gasto com remedios", f"R$ {total_remedios:.2f}")
-    c2.metric("Gasto com consultas", f"R$ {total_consultas:.2f}")
-    c3.metric("Gasto total", f"R$ {total_geral:.2f}")
-
-    if not df_compras.empty:
-        st.subheader("Compras de remedios")
-        cols = [c for c in ["data_compra", "nome_remedio", "valor"] if c in df_compras.columns]
-        st.dataframe(df_compras[cols], use_container_width=True)
-
-    if not df_consultas.empty:
-        st.subheader("Consultas")
-        cols = [c for c in ["data_consulta", "medico", "valor"] if c in df_consultas.columns]
-        st.dataframe(df_consultas[cols], use_container_width=True)
-
-
-def tela_cadastro():
-    st.title("Cadastro")
-
-    if not st.session_state.admin:
-        st.warning("Acesse o modo ADM para cadastrar.")
-        return
-
-    tipo = st.selectbox("Tipo de cadastro", ["Remedio", "Consulta"])
-
-    with st.form("cadastro_novo"):
-        if tipo == "Remedio":
-            nome = st.text_input("Nome")
-            qtd = st.number_input("Quantidade da caixa", min_value=1, value=30, step=1)
-            dose = st.number_input("Dose diaria", min_value=0.1, value=1.0, step=0.1)
-            preco = st.number_input("Preco", min_value=0.0, value=0.0, step=0.01)
-            precisa_receita = st.checkbox("Precisa de receita")
-
-            if st.form_submit_button("Salvar medicamento"):
-                if not nome.strip():
-                    st.error("Informe o nome do remedio.")
-                    return
-
-                ok_remedio = api_write(
-                    "POST",
-                    "remedios",
-                    {
-                        "nome": nome.strip(),
-                        "qtd_total": int(qtd),
-                        "dose_diaria": float(dose),
-                        "preco": float(preco),
-                        "precisa_receita": bool(precisa_receita),
-                        "data_inicio": str(datetime.now().date()),
-                    },
-                )
-
-                ok_compra = api_write(
-                    "POST",
-                    "compras",
-                    {
-                        "nome_remedio": nome.strip(),
-                        "valor": float(preco),
-                        "data_compra": str(datetime.now().date()),
-                    },
-                )
-
-                if ok_remedio and ok_compra:
-                    st.success("Medicamento salvo com sucesso.")
-                    time.sleep(1)
-                    st.rerun()
-
-        else:
-            medico = st.text_input("Medico")
-            valor = st.number_input("Valor", min_value=0.0, value=0.0, step=0.01)
-            data_consulta = st.date_input("Data")
-
-            if st.form_submit_button("Salvar consulta"):
-                if not medico.strip():
-                    st.error("Informe o nome do medico.")
-                    return
-
-                if api_write(
-                    "POST",
-                    "consultas",
-                    {
-                        "medico": medico.strip(),
-                        "valor": float(valor),
-                        "data_consulta": str(data_consulta),
-                    },
-                ):
-                    st.success("Consulta salva com sucesso.")
-                    time.sleep(1)
-                    st.rerun()
-
-
-def tela_remover():
-    st.title("Remover")
-
-    if not st.session_state.admin:
-        st.warning("Acesse o modo ADM para remover.")
-        return
-
-    tabela = st.selectbox("Escolha a categoria", ["remedios", "consultas", "compras"])
-    df = api_get(tabela)
-
-    if df.empty:
-        st.info("Nenhum item encontrado para remover.")
-        return
-
-    coluna_nome = "nome" if tabela == "remedios" else "medico" if tabela == "consultas" else "nome_remedio"
-    item = st.selectbox("Item para excluir", df[coluna_nome].astype(str).tolist())
-
-    if st.button("Remover permanente"):
-        item_id = df.loc[df[coluna_nome].astype(str) == item, "id"].iloc[0]
-        if api_write("DELETE", f"{tabela}?id=eq.{item_id}"):
-            st.success("Item removido com sucesso.")
-            time.sleep(1)
+            else: st.error("Senha Incorreta")
+    else:
+        st.success("✨ Modo Editor Ativo")
+        if st.button("Sair do Modo ADM"):
+            st.session_state.admin = False
             st.rerun()
+    
+    st.markdown("---")
+    # Menu com fundo claro e letra preta
+    menu = st.radio("Navegação", ["📊 Estoque", "🩺 Consultas", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
 
+# --- 5. LÓGICA DAS TELAS (MANTIDA) ---
 
-def main():
-    init_state()
-    render_css()
-    menu = render_sidebar()
+if menu == "📊 Estoque":
+    st.title("💊 Controle de Remédios")
+    df = api_get("remedios")
+    if df.empty:
+        st.info("Nenhum remédio cadastrado.")
+    else:
+        hoje = datetime.now()
+        if "alertas_enviados" not in st.session_state:
+            st.session_state.alertas_enviados = []
 
-    if menu == "Estoque":
-        tela_estoque()
-    elif menu == "Historico Medico":
-        tela_historico()
-    elif menu == "Financeiro":
-        tela_financeiro()
-    elif menu == "Cadastro":
-        tela_cadastro()
-    elif menu == "Remover":
-        tela_remover()
+        for _, r in df.iterrows():
+            dias_passados = (hoje - r['data_inicio']).days
+            consumo_real = dias_passados * r['dose_diaria']
+            estoque_atual = max(0, int(r['qtd_total'] - consumo_real))
+            
+            dias_restantes = int(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
+            data_fim = hoje + timedelta(days=dias_restantes)
+            
+            # ALERTA DE 7 DIAS
+            if dias_restantes < 7 and r['nome'] not in st.session_state.alertas_enviados:
+                msg = f"⚠️ ALERTA DE ESTOQUE: {r['nome']}\nAcaba em {dias_restantes} dias ({data_fim.strftime('%d/%m/%Y')})"
+                enviar_telegram(msg)
+                st.session_state.alertas_enviados.append(r['nome'])
 
+            st.markdown(f"""
+                <div class="med-card">
+                    <span style="font-size: 1.4em;"><b>{r['nome'].upper()}</b></span><br><br>
+                    <p style="margin:0; font-size: 1.1em;">📦 Restam: <b>{estoque_atual} comprimidos</b></p>
+                    <p style="margin:0;">🕒 Dose diária: <b>{r['dose_diaria']} un.</b></p>
+                    <p style="margin-top:10px; font-size: 1.2em; color: {'#CC0000' if dias_restantes < 7 else '#006600'} !important;">
+                        📅 Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b> ({dias_restantes} dias)
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            if st.session_state.admin:
+                with st.expander(f"🔄 Repor {r['nome']}"):
+                    with st.form(f"form_{r['id']}"):
+                        n_qtd = st.number_input("Quantidade comprada agora", min_value=1, value=30)
+                        n_valor = st.number_input("Preço pago nesta caixa (R$)", min_value=0.0, value=float(r['preco']))
+                        if st.form_submit_button("Confirmar Reposição"):
+                            total_novo = estoque_atual + n_qtd
+                            requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(total_novo), "data_inicio": str(hoje.date()), "preco": float(n_valor)})
+                            requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(n_valor), "data_compra": str(hoje.date())})
+                            enviar_telegram(f"✅ REPOSIÇÃO REALIZADA: {r['nome']}\n📦 Novo total: {total_novo} un.")
+                            st.success("Atualizado!"); time.sleep(1); st.cache_data.clear(); st.rerun()
 
-if __name__ == "__main__":
-    main()
+elif menu == "🩺 Consultas":
+    st.title("🩺 Histórico de Consultas")
+    df_c = api_get("consultas")
+    if not df_c.empty:
+        for _, c in df_c.iterrows():
+            st.markdown(f"""
+                <div class="med-card" style="border-left-color: #10B981;">
+                    <p style="margin:0;">📅 Data: {c['data_consulta'].strftime('%d/%m/%Y')}</p>
+                    <p style="margin:0; font-size: 1.2em;"><b>Dr(a). {c['medico']}</b></p>
+                    <p style="margin:0; color: #166534;">Valor: R$ {float(c.get('valor', 0)):.2f}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+elif menu == "💰 Financeiro":
+    st.title("💰 Controle Financeiro")
+    df_r, df_c = api_get("compras"), api_get("consultas")
+    t1 = df_r['valor'].sum() if not df_r.empty else 0
+    t2 = df_c['valor'].sum() if not df_c.empty else 0
+    st.metric("Total Gasto", f"R$ {t1+t2:.2f}")
+    if not df_r.empty:
+        st.subheader("🛒 Compras de Remédios")
+        st.dataframe(df_r[['data_compra', 'nome_remedio', 'valor']], use_container_width=True)
+
+elif menu == "➕ Cadastro":
+    if not st.session_state.admin: st.warning("Acesse modo ADM")
+    else:
+        tipo = st.selectbox("O que cadastrar?", ["Remédio", "Consulta"])
+        with st.form("cad_novo"):
+            if tipo == "Remédio":
+                n, q = st.text_input("Nome"), st.number_input("Qtd Caixa", value=30)
+                d, p = st.number_input("Dose/dia", value=1.0), st.number_input("Preço", value=0.0)
+                if st.form_submit_button("Salvar"):
+                    requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
+                    requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio":n,"valor":float(p),"data_compra":str(datetime.now().date())})
+                    st.success("OK!"); time.sleep(1); st.rerun()
+            else:
+                m, v, dt = st.text_input("Médico"), st.number_input("Valor", value=0.0), st.date_input("Data")
+                if st.form_submit_button("Salvar"):
+                    requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt)})
+                    st.success("OK!"); time.sleep(1); st.rerun()
+
+elif menu == "🗑️ Remover":
+    if not st.session_state.admin: st.warning("Acesse modo ADM")
+    else:
+        tab = st.selectbox("Categoria", ["remedios", "consultas", "compras"])
+        df_d = api_get(tab)
+        if not df_d.empty:
+            col = 'nome' if tab == 'remedios' else 'medico' if tab == 'consultas' else 'nome_remedio'
+            it = st.selectbox("Item", df_d[col].tolist())
+            if st.button("Remover Permanentemente"):
+                requests.delete(f"{URL_SUPABASE}{tab}?id=eq.{df_d[df_d[col] == it]['id'].values[0]}", headers=HEADERS)
+                st.rerun()
