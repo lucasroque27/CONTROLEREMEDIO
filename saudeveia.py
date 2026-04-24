@@ -1,8 +1,9 @@
-import streamlit as st
-import pandas as pd
-import requests
 import time
 from datetime import datetime, timedelta
+
+import pandas as pd
+import requests
+import streamlit as st
 
 
 URL_SUPABASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
@@ -18,12 +19,132 @@ HEADERS = {
     "Prefer": "return=representation",
 }
 
-st.set_page_config(page_title="Gestao Saude", page_icon="💊", layout="wide")
+st.set_page_config(page_title="Gestao Saude", page_icon="💊", layout="centered")
 
 
 def init_state():
     st.session_state.setdefault("admin", False)
     st.session_state.setdefault("alertas_enviados", {})
+
+
+def render_css():
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background: linear-gradient(180deg, #f7fbff 0%, #ecf4ff 100%) !important;
+        }
+
+        header[data-testid="stHeader"] {
+            background: rgba(255, 255, 255, 0.92) !important;
+        }
+
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #dbeafe 0%, #cfe4ff 100%) !important;
+            border-right: 1px solid #b9d3f0;
+        }
+
+        [data-testid="stSidebar"] * {
+            color: #12324a !important;
+        }
+
+        [data-testid="stSidebar"] hr {
+            border-color: #a9c8eb !important;
+        }
+
+        h1, h2, h3, label, .stMarkdown, p, div {
+            color: #12324a;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            border-left: 10px solid #5b9dff;
+            box-shadow: 0 8px 22px rgba(44, 101, 163, 0.10);
+        }
+
+        .card.alerta-receita {
+            border-left-color: #ff8a3d;
+            background: linear-gradient(180deg, #fff8ef 0%, #ffefd9 100%);
+        }
+
+        .titulo-remedio {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #12324a !important;
+            margin-bottom: 8px;
+        }
+
+        .linha {
+            font-size: 1.05rem;
+            color: #1f4766 !important;
+            margin-bottom: 6px;
+        }
+
+        .linha-data-ok {
+            font-size: 1.08rem;
+            font-weight: 700;
+            color: #197a43 !important;
+            margin-top: 10px;
+        }
+
+        .linha-data-alerta {
+            font-size: 1.08rem;
+            font-weight: 700;
+            color: #c0392b !important;
+            margin-top: 10px;
+        }
+
+        .linha-aviso {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #b85c00 !important;
+            margin-top: 8px;
+        }
+
+        div.stButton > button {
+            width: 100%;
+            border-radius: 12px;
+            background: linear-gradient(180deg, #69abff 0%, #4b91f1 100%) !important;
+            color: white !important;
+            border: none !important;
+            font-weight: 700;
+            box-shadow: 0 6px 18px rgba(75, 145, 241, 0.22);
+        }
+
+        div.stButton > button:hover {
+            background: linear-gradient(180deg, #79b4ff 0%, #5a9cf7 100%) !important;
+        }
+
+        .stTextInput input,
+        .stNumberInput input,
+        .stDateInput input,
+        .stSelectbox > div > div,
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="base-input"] > div {
+            background-color: #ffffff !important;
+            color: #12324a !important;
+            border-radius: 12px !important;
+        }
+
+        .stCheckbox label,
+        .stRadio label,
+        .stSelectbox label,
+        .stTextInput label,
+        .stNumberInput label,
+        .stDateInput label {
+            color: #12324a !important;
+            font-weight: 700 !important;
+        }
+
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def enviar_telegram(mensagem):
@@ -88,11 +209,7 @@ def calcular_estoque(remedio, hoje):
     consumido = int(dias_passados * dose_diaria)
     estoque_atual = max(0, qtd_total - consumido)
 
-    if dose_diaria > 0:
-        dias_restantes = int(estoque_atual / dose_diaria)
-    else:
-        dias_restantes = 0
-
+    dias_restantes = int(estoque_atual / dose_diaria) if dose_diaria > 0 else 0
     data_fim = hoje + timedelta(days=dias_restantes)
     return estoque_atual, dias_restantes, data_fim
 
@@ -115,96 +232,6 @@ def alerta_estoque(remedio, estoque_atual, dias_restantes, data_fim):
     st.session_state.alertas_enviados[alerta_id] = True
 
 
-def render_css():
-    st.markdown(
-        """
-        <style>
-        .stApp {
-            background: linear-gradient(180deg, #f4f8ff 0%, #eaf2ff 100%) !important;
-        }
-
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #dcecff 0%, #cfe3fb 100%) !important;
-            border-right: 1px solid #b4cfee;
-        }
-
-        [data-testid="stSidebar"] * {
-            color: #12324a !important;
-        }
-
-        [data-testid="stSidebar"] hr {
-            border-color: #a8c8ea !important;
-        }
-
-        .med-card {
-            background: #ffffff;
-            border-radius: 18px;
-            padding: 20px;
-            margin-bottom: 18px;
-            border-left: 10px solid #5b9dff;
-            box-shadow: 0 8px 24px rgba(44, 101, 163, 0.10);
-        }
-
-        .med-card.alerta-receita {
-            border-left: 10px solid #ff8a3d;
-            background: linear-gradient(180deg, #fff7ef 0%, #ffeddc 100%);
-        }
-
-        .titulo-remedio {
-            font-size: 1.5rem;
-            font-weight: 800;
-            color: #12324a;
-            margin-bottom: 8px;
-        }
-
-        .linha-info {
-            font-size: 1.04rem;
-            color: #1c425f;
-            margin-bottom: 8px;
-        }
-
-        .linha-alerta {
-            font-size: 1.08rem;
-            font-weight: 700;
-            color: #c0392b;
-            margin-top: 10px;
-        }
-
-        .linha-ok {
-            font-size: 1.08rem;
-            font-weight: 700;
-            color: #1e8449;
-            margin-top: 10px;
-        }
-
-        div.stButton > button {
-            width: 100%;
-            border-radius: 12px;
-            background: linear-gradient(180deg, #69abff 0%, #4b91f1 100%) !important;
-            color: #ffffff !important;
-            font-weight: 700;
-            border: none !important;
-        }
-
-        div[data-baseweb="input"] > div,
-        div[data-baseweb="base-input"] > div,
-        .stTextInput input,
-        .stNumberInput input,
-        .stDateInput input,
-        .stSelectbox > div > div {
-            background-color: #ffffff !important;
-            color: #12324a !important;
-            border-radius: 12px !important;
-        }
-
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def render_sidebar():
     with st.sidebar:
         st.markdown("<h2 style='text-align:center;'>Gestao Saude</h2>", unsafe_allow_html=True)
@@ -225,11 +252,10 @@ def render_sidebar():
                 st.rerun()
 
         st.markdown("---")
-        menu = st.radio(
+        return st.radio(
             "Navegacao",
-            ["Estoque", "Historico Medico", "Financeiro", "Cadastro", "Remover"]
+            ["Estoque", "Historico Medico", "Financeiro", "Cadastro", "Remover"],
         )
-        return menu
 
 
 def tela_estoque():
@@ -240,11 +266,11 @@ def tela_estoque():
         st.info("Nenhum remedio cadastrado.")
         return
 
-    col1, col2 = st.columns([1.2, 1])
+    col1, col2 = st.columns([1.4, 1.0])
     with col1:
         filtro_receita = st.selectbox(
             "Filtrar por receita",
-            ["Todos", "So com receita", "So sem receita"]
+            ["Todos", "So com receita", "So sem receita"],
         )
     with col2:
         mostrar_alertas = st.checkbox("Mostrar so os que estao acabando")
@@ -266,25 +292,22 @@ def tela_estoque():
             continue
 
         exibidos += 1
-        precisa_receita_texto = "Sim" if precisa_receita else "Nao"
-        classe_card = "med-card alerta-receita" if precisa_receita and dias_restantes < 7 else "med-card"
-        classe_data = "linha-alerta" if dias_restantes < 7 else "linha-ok"
 
-        alerta_receita_html = ""
+        classe_card = "card alerta-receita" if precisa_receita and dias_restantes < 7 else "card"
+        classe_data = "linha-data-alerta" if dias_restantes < 7 else "linha-data-ok"
+        receita_texto = "Sim" if precisa_receita else "Nao"
+        aviso_html = ""
+
         if precisa_receita and dias_restantes < 7:
-            alerta_receita_html = """
-                <div class="linha-alerta">
-                    Atencao: este remedio precisa de receita e esta perto de acabar.
-                </div>
-            """
+            aviso_html = '<div class="linha-aviso">Atencao: este remedio precisa de receita e esta perto de acabar.</div>'
 
         st.markdown(
             f"""
             <div class="{classe_card}">
                 <div class="titulo-remedio">{str(remedio['nome']).upper()}</div>
-                <div class="linha-info">Estoque: <b>{estoque_atual} un.</b> | Dose: <b>{remedio['dose_diaria']} p/ dia</b></div>
-                <div class="linha-info">Precisa de receita: <b>{precisa_receita_texto}</b></div>
-                {alerta_receita_html}
+                <div class="linha">Estoque: <b>{estoque_atual} un.</b> | Dose: <b>{remedio['dose_diaria']} p/ dia</b></div>
+                <div class="linha">Precisa de receita: <b>{receita_texto}</b></div>
+                {aviso_html}
                 <div class="{classe_data}">Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b> ({dias_restantes} dias)</div>
             </div>
             """,
@@ -367,10 +390,10 @@ def tela_historico():
 
         st.markdown(
             f"""
-            <div class="med-card">
+            <div class="card">
                 <div class="titulo-remedio">{medico}</div>
-                <div class="linha-info">Data: <b>{data_fmt}</b></div>
-                <div class="linha-info">Valor: <b>R$ {valor:.2f}</b></div>
+                <div class="linha">Data: <b>{data_fmt}</b></div>
+                <div class="linha">Valor: <b>R$ {valor:.2f}</b></div>
             </div>
             """,
             unsafe_allow_html=True,
