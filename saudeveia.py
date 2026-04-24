@@ -22,8 +22,10 @@ HEADERS = {
 def enviar_telegram(mensagem):
     try:
         url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": mensagem}, timeout=5)
-    except: pass
+        res = requests.post(url, data={"chat_id": CHAT_ID, "text": mensagem}, timeout=5)
+        return res.status_code == 200
+    except:
+        return False
 
 def api_get(tabela):
     try:
@@ -37,35 +39,19 @@ def api_get(tabela):
     except: pass
     return pd.DataFrame()
 
-# --- 3. ESTILO CSS (VISUAL PREMIUM E ALERTAS) ---
+# --- 3. ESTILO CSS (VISUAL PREMIUM MANTIDO) ---
 st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
 
 st.markdown("""
     <style>
     .stApp { background-color: #FFFFFF !important; }
-
-    /* HEADER E BOTÃO DE MENU */
-    header[data-testid="stHeader"] {
-        background-color: #FFFFFF !important;
-        border-bottom: 1px solid #E6F0FF !important;
-    }
-    header[data-testid="stHeader"] button {
-        background-color: #3B82F6 !important;
-        color: white !important;
-        border-radius: 8px !important;
-    }
+    header[data-testid="stHeader"] { background-color: #FFFFFF !important; border-bottom: 1px solid #E6F0FF !important; }
+    header[data-testid="stHeader"] button { background-color: #3B82F6 !important; color: white !important; border-radius: 8px !important; }
     header[data-testid="stHeader"] svg { fill: white !important; }
-
-    /* SIDEBAR */
     [data-testid="stSidebar"] { background-color: #E6F0FF !important; }
     [data-testid="stSidebar"] * { color: #000000 !important; }
-
-    /* TEXTO PRETO */
-    .stApp, .stApp p, .stApp span, .stApp label, .stApp h1, .stApp h2, .stApp h3 {
-        color: #000000 !important;
-    }
-
-    /* CARD DE REMÉDIO EVOLUÍDO */
+    .stApp, .stApp p, .stApp span, .stApp label, .stApp h1, .stApp h2, .stApp h3 { color: #000000 !important; }
+    
     .med-card {
         background-color: #FFFFFF !important;
         border-radius: 12px;
@@ -73,39 +59,11 @@ st.markdown("""
         margin-bottom: 15px;
         border: 1px solid #E2E8F0;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        position: relative;
     }
-
-    /* BARRA DE PROGRESSO CUSTOMIZADA */
-    .progress-bg {
-        background-color: #EDF2F7;
-        border-radius: 10px;
-        height: 10px;
-        width: 100%;
-        margin-top: 10px;
-    }
-    .progress-fill {
-        height: 10px;
-        border-radius: 10px;
-    }
-
-    /* STATUS BADGE */
-    .status-badge {
-        float: right;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 0.8em;
-        font-weight: bold;
-        color: white !important;
-    }
-
-    /* BOTÕES */
-    div.stButton > button {
-        background-color: #3B82F6 !important;
-        color: #FFFFFF !important;
-        border-radius: 8px !important;
-    }
-
+    .progress-bg { background-color: #EDF2F7; border-radius: 10px; height: 10px; width: 100%; margin-top: 10px; }
+    .progress-fill { height: 10px; border-radius: 10px; }
+    .status-badge { float: right; padding: 4px 10px; border-radius: 20px; font-size: 0.8em; font-weight: bold; color: white !important; }
+    div.stButton > button { background-color: #3B82F6 !important; color: #FFFFFF !important; border-radius: 8px !important; }
     input { -webkit-text-fill-color: #000000 !important; background-color: white !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -113,25 +71,30 @@ st.markdown("""
 # --- 4. BARRA LATERAL ---
 with st.sidebar:
     st.markdown("<h2 style='text-align: center;'>🏥 Gestão Saúde</h2>", unsafe_allow_html=True)
-    st.markdown("---")
     
     if "admin" not in st.session_state: st.session_state.admin = False
-    
+    if "alertas_enviados" not in st.session_state: st.session_state.alertas_enviados = []
+
     if not st.session_state.admin:
-        st.markdown("### 🔒 Acesso")
         pw = st.text_input("Senha ADM", type="password")
         if st.button("Entrar no Modo ADM") or (pw == SENHA_ADM):
             if pw == SENHA_ADM:
                 st.session_state.admin = True
                 st.rerun()
-            elif pw != "":
-                st.error("Senha Incorreta")
     else:
-        st.success("✅ Modo Editor Ativo")
+        st.success("✅ Modo Editor")
         if st.button("Sair do Modo ADM"):
             st.session_state.admin = False
             st.rerun()
     
+    st.markdown("---")
+    # Botão de Teste para o Telegram
+    if st.button("🔔 Testar Telegram"):
+        if enviar_telegram("Teste de conexão: O bot de Saúde está funcionando! ✅"):
+            st.toast("Mensagem enviada!")
+        else:
+            st.error("Erro ao enviar. Verifique o Token.")
+
     st.markdown("---")
     menu = st.radio("Navegação", ["📊 Estoque", "🩺 Consultas", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
 
@@ -146,39 +109,34 @@ if menu == "📊 Estoque":
     else:
         hoje = datetime.now()
         for _, r in df.iterrows():
-            # Cálculos
             dias_passados = (hoje - r['data_inicio']).days
             estoque_atual = max(0, int(r['qtd_total'] - (dias_passados * r['dose_diaria'])))
             dias_restantes = int(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
             data_fim = hoje + timedelta(days=dias_restantes)
             
-            # Lógica de Impacto Visual (Alertas)
+            # --- LÓGICA DE ALERTA TELEGRAM ---
+            if dias_restantes < 7 and r['nome'] not in st.session_state.alertas_enviados:
+                msg = f"⚠️ ALERTA DE ESTOQUE!\nRemédio: {r['nome']}\nRestam apenas: {estoque_atual} unidades.\nAcaba em: {data_fim.strftime('%d/%m/%Y')}"
+                if enviar_telegram(msg):
+                    st.session_state.alertas_enviados.append(r['nome'])
+            
+            # Impacto Visual
             if dias_restantes < 7:
-                cor_status = "#EF4444" # Vermelho
-                label_status = "🚨 CRÍTICO"
+                cor_status, label_status = "#EF4444", "🚨 CRÍTICO"
             elif dias_restantes < 15:
-                cor_status = "#F59E0B" # Laranja
-                label_status = "⚠️ ATENÇÃO"
+                cor_status, label_status = "#F59E0B", "⚠️ ATENÇÃO"
             else:
-                cor_status = "#10B981" # Verde
-                label_status = "✅ BOM"
+                cor_status, label_status = "#10B981", "✅ BOM"
 
-            # Porcentagem para a barra de progresso
             pct = min(100, int((estoque_atual / r['qtd_total']) * 100)) if r['qtd_total'] > 0 else 0
 
             st.markdown(f"""
                 <div class="med-card" style="border-left: 10px solid {cor_status};">
                     <div class="status-badge" style="background-color: {cor_status};">{label_status}</div>
                     <span style="font-size: 1.3em;"><b>{r['nome'].upper()}</b></span><br>
-                    <p style="margin:5px 0 0 0; font-size: 0.9em;">
-                        📦 <b>{estoque_atual}</b> un. restantes (Dose: {r['dose_diaria']}/dia)
-                    </p>
-                    <p style="margin:0; font-size: 1.1em; color: {cor_status} !important;">
-                        📅 Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b>
-                    </p>
-                    <div class="progress-bg">
-                        <div class="progress-fill" style="width: {pct}%; background-color: {cor_status};"></div>
-                    </div>
+                    <p style="margin:5px 0 0 0; font-size: 0.9em;">📦 <b>{estoque_atual}</b> un. restantes | Dose: {r['dose_diaria']}/dia</p>
+                    <p style="margin:0; font-size: 1.1em; color: {cor_status} !important;">📅 Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b></p>
+                    <div class="progress-bg"><div class="progress-fill" style="width: {pct}%; background-color: {cor_status};"></div></div>
                 </div>
             """, unsafe_allow_html=True)
             
@@ -190,17 +148,17 @@ if menu == "📊 Estoque":
                         total = estoque_atual + n_q
                         requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(total), "data_inicio": str(hoje.date()), "preco": float(n_v)})
                         requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(n_v), "data_compra": str(hoje.date())})
-                        st.success("Estoque renovado!"); time.sleep(1); st.rerun()
+                        if r['nome'] in st.session_state.alertas_enviados: st.session_state.alertas_enviados.remove(r['nome'])
+                        st.success("Renovado!"); time.sleep(1); st.rerun()
 
 elif menu == "🩺 Consultas":
     st.title("🩺 Histórico")
     df_c = api_get("consultas")
-    if df_c.empty: st.info("Sem registros.")
-    else:
+    if not df_c.empty:
         for _, c in df_c.iterrows():
             st.markdown(f"""<div class="med-card" style="border-left: 8px solid #3B82F6;">
                 <b>{c['data_consulta'].strftime('%d/%m/%Y')}</b> | Dr. {c['medico']}<br>
-                <span style="font-size: 1.1em;">R$ {float(c.get('valor', 0)):.2f}</span></div>""", unsafe_allow_html=True)
+                <span>R$ {float(c.get('valor', 0)):.2f}</span></div>""", unsafe_allow_html=True)
 
 elif menu == "💰 Financeiro":
     st.title("💰 Resumo")
@@ -216,17 +174,16 @@ elif menu == "➕ Cadastro":
         tipo = st.selectbox("Tipo:", ["Remédio", "Consulta"])
         with st.form("new"):
             if tipo == "Remédio":
-                n, q = st.text_input("Nome"), st.number_input("Qtd Inicial", value=30)
-                d, p = st.number_input("Dose/dia", value=1.0), st.number_input("Preço", value=0.0)
+                n, q, d, p = st.text_input("Nome"), st.number_input("Qtd", 30), st.number_input("Dose", 1.0), st.number_input("Preço", 0.0)
                 if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
                     requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio":n,"valor":float(p),"data_compra":str(datetime.now().date())})
-                    st.success("Salvo!"); time.sleep(1); st.rerun()
+                    st.rerun()
             else:
                 m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
                 if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt)})
-                    st.success("Salvo!"); time.sleep(1); st.rerun()
+                    st.rerun()
 
 elif menu == "🗑️ Remover":
     if not st.session_state.admin: st.warning("🔒 Área Restrita.")
@@ -235,7 +192,7 @@ elif menu == "🗑️ Remover":
         df_d = api_get(tab)
         if not df_d.empty:
             col = 'nome' if tab == 'remedios' else 'medico' if tab == 'consultas' else 'nome_remedio'
-            it = st.selectbox("Escolha o item:", df_d[col].tolist())
-            if st.button("Confirmar Exclusão"):
+            it = st.selectbox("Escolha:", df_d[col].tolist())
+            if st.button("Remover"):
                 requests.delete(f"{URL_SUPABASE}{tab}?id=eq.{df_d[df_d[col] == it]['id'].values[0]}", headers=HEADERS)
                 st.rerun()
