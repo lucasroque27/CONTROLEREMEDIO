@@ -37,13 +37,36 @@ def api_get(tabela):
     except: pass
     return pd.DataFrame()
 
-# --- 3. ESTILO CSS (FORÇANDO VISIBILIDADE TOTAL) ---
+# --- 3. ESTILO CSS (CORREÇÃO DO HEADER E BOTÃO DE MENU) ---
 st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
 
 st.markdown("""
     <style>
     /* FUNDO GERAL BRANCO */
     .stApp { background-color: #FFFFFF !important; }
+
+    /* --- CORREÇÃO DO BOTÃO DE MENU (CANTO SUPERIOR ESQUERDO) --- */
+    header[data-testid="stHeader"] {
+        background-color: #FFFFFF !important;
+        border-bottom: 1px solid #E6F0FF !important;
+        height: 60px !important;
+    }
+
+    /* Estilizando o botão que abre a sidebar */
+    header[data-testid="stHeader"] button {
+        background-color: #3B82F6 !important; /* Azul para destacar */
+        color: white !important;
+        border-radius: 8px !important;
+        margin-left: 10px !important;
+        padding: 5px !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
+    }
+    
+    /* Força o ícone dentro do botão a ser branco */
+    header[data-testid="stHeader"] svg {
+        fill: white !important;
+        color: white !important;
+    }
 
     /* SIDEBAR AZUL CLARINHO */
     [data-testid="stSidebar"] {
@@ -52,12 +75,12 @@ st.markdown("""
     }
     [data-testid="stSidebar"] * { color: #000000 !important; }
 
-    /* FORÇAR TEXTO PRETO EM TUDO */
+    /* TEXTO PRETO EM TUDO */
     .stApp, .stApp p, .stApp span, .stApp label, .stApp h1, .stApp h2, .stApp h3 {
         color: #000000 !important;
     }
 
-    /* CORREÇÃO DOS CARDS (PÁGINA DE HISTÓRICO E ESTOQUE) */
+    /* CARDS */
     .med-card {
         background-color: #F8F9FA !important;
         border-radius: 15px;
@@ -67,29 +90,20 @@ st.markdown("""
         border-left: 12px solid #3B82F6;
         box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     }
-    .med-card * {
-        color: #000000 !important; /* Força tudo dentro do card a ser preto */
-    }
+    .med-card * { color: #000000 !important; }
 
-    /* CORREÇÃO DO VALOR FINANCEIRO (METRIC) */
-    [data-testid="stMetricValue"] {
-        color: #000000 !important;
-        font-weight: bold !important;
-    }
-    [data-testid="stMetricLabel"] {
-        color: #444444 !important;
-    }
+    /* VALORES FINANCEIROS (METRIC) */
+    [data-testid="stMetricValue"] { color: #000000 !important; font-weight: bold !important; }
+    [data-testid="stMetricLabel"] { color: #444444 !important; }
 
     /* CAMPOS DE ENTRADA BRANCOS */
     input, .stTextInput div, .stNumberInput div, div[data-baseweb="input"], .stSelectbox div {
         background-color: #FFFFFF !important;
         color: #000000 !important;
     }
-    input {
-        -webkit-text-fill-color: #000000 !important;
-    }
+    input { -webkit-text-fill-color: #000000 !important; }
 
-    /* BOTÕES */
+    /* BOTÕES GERAIS */
     div.stButton > button {
         background-color: #3B82F6 !important;
         color: #FFFFFF !important;
@@ -126,7 +140,7 @@ with st.sidebar:
     st.markdown("---")
     menu = st.radio("Navegação", ["📊 Estoque", "🩺 Consultas", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
 
-# --- 5. TELAS ---
+# --- 5. LÓGICA DAS TELAS (MANTIDA) ---
 
 if menu == "📊 Estoque":
     st.title("💊 Controle de Estoque")
@@ -181,12 +195,9 @@ elif menu == "💰 Financeiro":
     df_r, df_c = api_get("compras"), api_get("consultas")
     t1 = df_r['valor'].sum() if not df_r.empty else 0
     t2 = df_c['valor'].sum() if not df_c.empty else 0
-    
     st.metric("Total Gasto", f"R$ {t1+t2:.2f}")
-    
-    st.markdown("### 🛒 Detalhes de Compras")
     if not df_r.empty:
-        # Tabela formatada
+        st.markdown("### 🛒 Detalhes de Compras")
         st.dataframe(df_r[['data_compra', 'nome_remedio', 'valor']], use_container_width=True)
 
 elif menu == "➕ Cadastro":
@@ -200,12 +211,12 @@ elif menu == "➕ Cadastro":
                 if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
                     requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio":n,"valor":float(p),"data_compra":str(datetime.now().date())})
-                    st.success("OK!"); time.sleep(1); st.rerun()
+                    st.success("Salvo!"); time.sleep(1); st.rerun()
             else:
                 m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
                 if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt)})
-                    st.success("OK!"); time.sleep(1); st.rerun()
+                    st.success("Salvo!"); time.sleep(1); st.rerun()
 
 elif menu == "🗑️ Remover":
     if not st.session_state.admin: st.warning("🔒 Entre no modo ADM.")
@@ -215,6 +226,6 @@ elif menu == "🗑️ Remover":
         if not df_d.empty:
             col = 'nome' if tab == 'remedios' else 'medico' if tab == 'consultas' else 'nome_remedio'
             it = st.selectbox("Item:", df_d[col].tolist())
-            if st.button("Remover"):
+            if st.button("Remover Permanentemente"):
                 requests.delete(f"{URL_SUPABASE}{tab}?id=eq.{df_d[df_d[col] == it]['id'].values[0]}", headers=HEADERS)
                 st.rerun()
