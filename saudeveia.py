@@ -27,7 +27,7 @@ def api_get(tabela):
     except: pass
     return pd.DataFrame()
 
-# --- 2. ESTILO ORIGINAL RESGATADO (O SEGREDO DA BELEZA ESTÁ AQUI) ---
+# --- 2. ESTILO ORIGINAL RESGATADO E CORRIGIDO ---
 st.set_page_config(page_title="Controle de Medicamentos", page_icon="💊", layout="centered")
 
 st.markdown("""
@@ -35,10 +35,11 @@ st.markdown("""
     /* Fundo da tela mais limpo */
     .stApp { background-color: #f4f6f9; }
     
-    /* Esconder o header do Streamlit */
-    header { visibility: hidden; }
+    /* CORREÇÃO DO MENU: Mantém o header transparente para o botão do celular aparecer */
+    header { background-color: transparent !important; }
+    .block-container { padding-top: 2rem !important; }
     
-    /* O visual perfeito do Card que você aprovou na primeira foto */
+    /* O visual perfeito do Card */
     .card-remedio {
         background-color: white;
         border-radius: 12px;
@@ -78,7 +79,7 @@ st.markdown("""
     }
     .stat-box { flex: 1; }
     .stat-box:not(:last-child) { border-right: 1px solid #f1f2f6; }
-    .stat-num { font-size: 20px; font-weight: 800; color: #2c3e50; margin: 0; }
+    .stat-num { font-size: 18px; font-weight: 800; color: #2c3e50; margin: 0; }
     .stat-label { font-size: 11px; color: #7f8c8d; margin: 0; margin-top: 4px; }
     
     /* Ajuste fino do expander para colar embaixo do card */
@@ -107,7 +108,7 @@ with st.sidebar:
 
 meses_pt = {1:"Jan", 2:"Fev", 3:"Mar", 4:"Abr", 5:"Mai", 6:"Jun", 7:"Jul", 8:"Ago", 9:"Set", 10:"Out", 11:"Nov", 12:"Dez"}
 
-# --- 5. TELA DE ESTOQUE (COM O VISUAL BONITO) ---
+# --- 5. TELA DE ESTOQUE (VISUAL AJUSTADO) ---
 if aba == "Estoque":
     st.markdown("<h2>💊 Controle de Medicamentos</h2>", unsafe_allow_html=True)
     df = api_get("remedios")
@@ -117,13 +118,11 @@ if aba == "Estoque":
         itens_criticos = []
 
         for _, r in df.iterrows():
-            # Cálculos de estoque mantidos perfeitamente
             dias_p = (hoje - r['data_inicio']).days
             estoque = max(0, int(r['qtd_total'] - (dias_p * r['dose_diaria'])))
             dias_r = int(estoque / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
             data_f = hoje + timedelta(days=dias_r)
             
-            # Define o estilo do status baseado nos dias restantes
             if dias_r < 7:
                 classe_badge = "badge-repor"
                 texto_badge = "REPOR ESTOQUE"
@@ -135,7 +134,7 @@ if aba == "Estoque":
                 classe_badge = "badge-ok"
                 texto_badge = "ESTOQUE OK"
 
-            # Gera o Card de HTML exatamente igual à primeira foto
+            # Card com a Dose Diária adicionada!
             card_html = f"""
             <div class="card-remedio">
                 <div class="card-header">
@@ -147,6 +146,10 @@ if aba == "Estoque":
                     <div class="stat-box">
                         <p class="stat-num">{estoque}</p>
                         <p class="stat-label">Disponíveis</p>
+                    </div>
+                    <div class="stat-box">
+                        <p class="stat-num">{r['dose_diaria']}</p>
+                        <p class="stat-label">Por Dia</p>
                     </div>
                     <div class="stat-box">
                         <p class="stat-num">{dias_r}</p>
@@ -161,29 +164,25 @@ if aba == "Estoque":
             """
             st.markdown(card_html, unsafe_allow_html=True)
 
-            # Botões de controle administrativos colocados logo abaixo do card
             if st.session_state.admin:
                 with st.expander(f"➕ Reposição e Preço para {r['nome']}"):
                     c1, c2, c3 = st.columns([2, 2, 1])
                     nq = c1.number_input("Adicionar Qtd", 1, 500, 30, key=f"q_{r['id']}")
                     np = c2.number_input("Novo Preço R$", 0.0, 5000.0, float(r['preco']), key=f"p_{r['id']}")
                     
-                    # Pular linha para alinhar o botão
                     c3.markdown("<br>", unsafe_allow_html=True)
                     if c3.button("Salvar", key=f"b_{r['id']}", use_container_width=True):
                         requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(estoque + nq), "data_inicio": str(hoje.date()), "preco": float(np)})
                         requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(np), "data_compra": str(hoje.date())})
                         
-                        # Alerta de reposição mantido
                         enviar_telegram(f"✅ Reposição Efetuada!\n💊 {r['nome']}\n📦 Novo total: {int(estoque + nq)} un.")
                         st.rerun()
 
-        # Alerta único de estoque baixo mantido
         if itens_criticos and "notificou_estoque" not in st.session_state:
             enviar_telegram("⚠️ **ESTOQUE BAIXO!**\n" + "\n".join(itens_criticos))
             st.session_state.notificou_estoque = True
 
-# --- 6. OUTRAS TELAS (MANTIDAS) ---
+# --- 6. OUTRAS TELAS ---
 elif aba == "Financeiro":
     st.markdown("<h2>💰 Gastos</h2>", unsafe_allow_html=True)
     df_f = api_get("compras")
