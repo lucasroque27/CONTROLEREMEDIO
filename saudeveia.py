@@ -32,7 +32,7 @@ def render_css():
         """
         <style>
         .stApp {
-            background: linear-gradient(180deg, #f7fbff 0%, #ecf4ff 100%) !important;
+            background: linear-gradient(180deg, #f7fbff 0%, #edf4ff 100%) !important;
         }
 
         header[data-testid="stHeader"] {
@@ -40,68 +40,21 @@ def render_css():
         }
 
         [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #dbeafe 0%, #cfe4ff 100%) !important;
-            border-right: 1px solid #b9d3f0;
+            background: linear-gradient(180deg, #dcebff 0%, #cfe2ff 100%) !important;
+            border-right: 1px solid #bfd4ee;
         }
 
         [data-testid="stSidebar"] * {
             color: #12324a !important;
         }
 
-        [data-testid="stSidebar"] hr {
-            border-color: #a9c8eb !important;
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
         }
 
-        h1, h2, h3, label, .stMarkdown, p, div {
-            color: #12324a;
-        }
-
-        .card {
-            background: #ffffff;
-            border-radius: 18px;
-            padding: 18px 20px;
-            margin-bottom: 18px;
-            border-left: 10px solid #5b9dff;
-            box-shadow: 0 8px 22px rgba(44, 101, 163, 0.10);
-        }
-
-        .card.alerta-receita {
-            border-left-color: #ff8a3d;
-            background: linear-gradient(180deg, #fff8ef 0%, #ffefd9 100%);
-        }
-
-        .titulo-remedio {
-            font-size: 1.5rem;
-            font-weight: 800;
+        h1, h2, h3, label {
             color: #12324a !important;
-            margin-bottom: 8px;
-        }
-
-        .linha {
-            font-size: 1.05rem;
-            color: #1f4766 !important;
-            margin-bottom: 6px;
-        }
-
-        .linha-data-ok {
-            font-size: 1.08rem;
-            font-weight: 700;
-            color: #197a43 !important;
-            margin-top: 10px;
-        }
-
-        .linha-data-alerta {
-            font-size: 1.08rem;
-            font-weight: 700;
-            color: #c0392b !important;
-            margin-top: 10px;
-        }
-
-        .linha-aviso {
-            font-size: 1rem;
-            font-weight: 700;
-            color: #b85c00 !important;
-            margin-top: 8px;
         }
 
         div.stButton > button {
@@ -111,11 +64,10 @@ def render_css():
             color: white !important;
             border: none !important;
             font-weight: 700;
-            box-shadow: 0 6px 18px rgba(75, 145, 241, 0.22);
         }
 
         div.stButton > button:hover {
-            background: linear-gradient(180deg, #79b4ff 0%, #5a9cf7 100%) !important;
+            background: linear-gradient(180deg, #7ab5ff 0%, #5ca0f8 100%) !important;
         }
 
         .stTextInput input,
@@ -124,19 +76,55 @@ def render_css():
         .stSelectbox > div > div,
         div[data-baseweb="input"] > div,
         div[data-baseweb="base-input"] > div {
-            background-color: #ffffff !important;
+            background-color: white !important;
             color: #12324a !important;
             border-radius: 12px !important;
         }
 
-        .stCheckbox label,
-        .stRadio label,
-        .stSelectbox label,
-        .stTextInput label,
-        .stNumberInput label,
-        .stDateInput label {
-            color: #12324a !important;
-            font-weight: 700 !important;
+        .med-box {
+            background: white;
+            border: 1px solid #dbe8f6;
+            border-left: 8px solid #5b9dff;
+            border-radius: 18px;
+            padding: 18px 18px 10px 18px;
+            margin-bottom: 18px;
+            box-shadow: 0 8px 22px rgba(44, 101, 163, 0.08);
+        }
+
+        .med-box.alerta {
+            border-left-color: #ff8a3d;
+            background: #fff8ef;
+        }
+
+        .med-title {
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #12324a;
+            margin-bottom: 8px;
+        }
+
+        .med-line {
+            font-size: 1rem;
+            color: #1f4766;
+            margin-bottom: 6px;
+        }
+
+        .med-ok {
+            color: #177245;
+            font-weight: 700;
+            margin-top: 8px;
+        }
+
+        .med-alert {
+            color: #c0392b;
+            font-weight: 700;
+            margin-top: 8px;
+        }
+
+        .med-warning {
+            color: #b85c00;
+            font-weight: 700;
+            margin-top: 8px;
         }
 
         #MainMenu { visibility: hidden; }
@@ -175,8 +163,8 @@ def api_get(tabela):
         )
         res.raise_for_status()
         return tratar_datas(pd.DataFrame(res.json()))
-    except requests.RequestException:
-        st.warning(f"Nao foi possivel carregar a tabela {tabela}.")
+    except requests.RequestException as e:
+        st.warning(f"Nao foi possivel carregar {tabela}: {e}")
         return pd.DataFrame()
 
 
@@ -208,7 +196,6 @@ def calcular_estoque(remedio, hoje):
     dias_passados = max(0, (hoje.date() - data_inicio.date()).days)
     consumido = int(dias_passados * dose_diaria)
     estoque_atual = max(0, qtd_total - consumido)
-
     dias_restantes = int(estoque_atual / dose_diaria) if dose_diaria > 0 else 0
     data_fim = hoje + timedelta(days=dias_restantes)
     return estoque_atual, dias_restantes, data_fim
@@ -258,6 +245,29 @@ def render_sidebar():
         )
 
 
+def render_card(remedio, estoque_atual, dias_restantes, data_fim):
+    precisa_receita = bool(remedio.get("precisa_receita", False))
+    receita_texto = "Sim" if precisa_receita else "Nao"
+    card_class = "med-box alerta" if precisa_receita and dias_restantes < 7 else "med-box"
+    data_class = "med-alert" if dias_restantes < 7 else "med-ok"
+    aviso_html = ""
+
+    if precisa_receita and dias_restantes < 7:
+        aviso_html = '<div class="med-warning">Atencao: este remedio precisa de receita e esta perto de acabar.</div>'
+
+    html = f"""
+    <div class="{card_class}">
+        <div class="med-title">{str(remedio['nome']).upper()}</div>
+        <div class="med-line">Estoque: <b>{estoque_atual} un.</b> | Dose: <b>{remedio['dose_diaria']} p/ dia</b></div>
+        <div class="med-line">Preco atual: <b>R$ {float(remedio.get('preco', 0) or 0):.2f}</b></div>
+        <div class="med-line">Precisa de receita: <b>{receita_texto}</b></div>
+        {aviso_html}
+        <div class="{data_class}">Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b> ({dias_restantes} dias)</div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def tela_estoque():
     st.title("Controle de Remedios")
     df = api_get("remedios")
@@ -266,13 +276,13 @@ def tela_estoque():
         st.info("Nenhum remedio cadastrado.")
         return
 
-    col1, col2 = st.columns([1.4, 1.0])
-    with col1:
+    c1, c2 = st.columns([1.5, 1.0])
+    with c1:
         filtro_receita = st.selectbox(
             "Filtrar por receita",
             ["Todos", "So com receita", "So sem receita"],
         )
-    with col2:
+    with c2:
         mostrar_alertas = st.checkbox("Mostrar so os que estao acabando")
 
     hoje = datetime.now()
@@ -281,7 +291,6 @@ def tela_estoque():
     for _, remedio in df.iterrows():
         estoque_atual, dias_restantes, data_fim = calcular_estoque(remedio, hoje)
         alerta_estoque(remedio, estoque_atual, dias_restantes, data_fim)
-
         precisa_receita = bool(remedio.get("precisa_receita", False))
 
         if filtro_receita == "So com receita" and not precisa_receita:
@@ -292,27 +301,7 @@ def tela_estoque():
             continue
 
         exibidos += 1
-
-        classe_card = "card alerta-receita" if precisa_receita and dias_restantes < 7 else "card"
-        classe_data = "linha-data-alerta" if dias_restantes < 7 else "linha-data-ok"
-        receita_texto = "Sim" if precisa_receita else "Nao"
-        aviso_html = ""
-
-        if precisa_receita and dias_restantes < 7:
-            aviso_html = '<div class="linha-aviso">Atencao: este remedio precisa de receita e esta perto de acabar.</div>'
-
-        st.markdown(
-            f"""
-            <div class="{classe_card}">
-                <div class="titulo-remedio">{str(remedio['nome']).upper()}</div>
-                <div class="linha">Estoque: <b>{estoque_atual} un.</b> | Dose: <b>{remedio['dose_diaria']} p/ dia</b></div>
-                <div class="linha">Precisa de receita: <b>{receita_texto}</b></div>
-                {aviso_html}
-                <div class="{classe_data}">Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b> ({dias_restantes} dias)</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        render_card(remedio, estoque_atual, dias_restantes, data_fim)
 
         if st.session_state.admin:
             with st.expander(f"Repor {remedio['nome']}"):
@@ -322,12 +311,14 @@ def tela_estoque():
                         min_value=1,
                         value=30,
                         step=1,
+                        key=f"qtd_{remedio['id']}",
                     )
                     preco_compra = st.number_input(
                         "Preco pago nesta compra",
                         min_value=0.0,
-                        value=float(remedio.get("preco", 0.0) or 0.0),
+                        value=float(remedio.get("preco", 0) or 0),
                         step=0.01,
+                        key=f"preco_{remedio['id']}",
                     )
                     precisa_receita_novo = st.checkbox(
                         "Precisa de receita",
@@ -388,16 +379,7 @@ def tela_historico():
         valor = float(consulta.get("valor", 0) or 0)
         medico = consulta.get("medico", "Nao informado")
 
-        st.markdown(
-            f"""
-            <div class="card">
-                <div class="titulo-remedio">{medico}</div>
-                <div class="linha">Data: <b>{data_fmt}</b></div>
-                <div class="linha">Valor: <b>R$ {valor:.2f}</b></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.info(f"{data_fmt} | Dr(a). {medico} | R$ {valor:.2f}")
 
 
 def tela_financeiro():
@@ -472,11 +454,6 @@ def tela_cadastro():
                 )
 
                 if ok_remedio and ok_compra:
-                    enviar_telegram(
-                        f"NOVO MEDICAMENTO: {nome.strip()}\n"
-                        f"Quantidade: {int(qtd)}\n"
-                        f"Preco: R$ {preco:.2f}"
-                    )
                     st.success("Medicamento salvo com sucesso.")
                     time.sleep(1)
                     st.rerun()
@@ -500,10 +477,6 @@ def tela_cadastro():
                         "data_consulta": str(data_consulta),
                     },
                 ):
-                    enviar_telegram(
-                        f"NOVA CONSULTA: {medico.strip()}\n"
-                        f"Valor: R$ {valor:.2f}"
-                    )
                     st.success("Consulta salva com sucesso.")
                     time.sleep(1)
                     st.rerun()
@@ -524,11 +497,6 @@ def tela_remover():
         return
 
     coluna_nome = "nome" if tabela == "remedios" else "medico" if tabela == "consultas" else "nome_remedio"
-
-    if coluna_nome not in df.columns:
-        st.error("Nao encontrei a coluna principal dessa tabela.")
-        return
-
     item = st.selectbox("Item para excluir", df[coluna_nome].astype(str).tolist())
 
     if st.button("Remover permanente"):
