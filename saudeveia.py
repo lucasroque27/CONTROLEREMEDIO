@@ -37,11 +37,12 @@ def api_get(tabela):
     except: pass
     return pd.DataFrame()
 
-# --- 3. ESTILO CSS (VISUAL CLARO E CAMPOS VISÍVEIS) ---
+# --- 3. ESTILO CSS (FORÇANDO BRANCO NOS CAMPOS ESCUROS) ---
 st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
 
 st.markdown("""
     <style>
+    /* FUNDO GERAL */
     .stApp { background-color: #FFFFFF !important; }
 
     /* SIDEBAR AZUL CLARINHO */
@@ -49,19 +50,35 @@ st.markdown("""
         background-color: #E6F0FF !important;
         border-right: 1px solid #C2D6F0;
     }
-    
-    [data-testid="stSidebar"] * { color: #000000 !important; font-weight: 600; }
+    [data-testid="stSidebar"] * { color: #000000 !important; }
 
-    /* AJUSTE DOS CAMPOS DE ENTRADA (INPUTS E SELECTBOXES) - FICARAM CLAROS */
-    div[data-baseweb="input"], div[data-baseweb="select"] > div {
+    /* --- CORREÇÃO DOS CAMPOS ESCUROS (INPUTS) --- */
+    /* Força o fundo branco e letra preta em todos os campos de texto e número */
+    input, div[data-baseweb="input"], div[data-baseweb="base-input"] {
         background-color: #FFFFFF !important;
-        border: 1px solid #C2D6F0 !important;
         color: #000000 !important;
+        -webkit-text-fill-color: #000000 !important;
     }
     
-    input { color: #000000 !important; }
+    /* Força cor preta nos botões de + e - dos campos numéricos */
+    button[data-testid="stNumberInputStepUp"], button[data-testid="stNumberInputStepDown"] {
+        background-color: #F0F2F6 !important;
+        color: #000000 !important;
+    }
 
-    /* CARDS */
+    /* Campos de Seleção (Selectbox) */
+    div[data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        color: #000000 !important;
+    }
+
+    /* Labels (Títulos dos campos) */
+    label {
+        color: #000000 !important;
+        font-weight: bold !important;
+    }
+
+    /* CARDS DE REMÉDIO */
     .med-card {
         background-color: #F8F9FA !important;
         border-radius: 15px;
@@ -72,17 +89,17 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     }
 
-    .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp span, .stApp label {
+    /* TEXTO GERAL */
+    .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp span {
         color: #000000 !important;
-        font-weight: 600;
     }
 
+    /* BOTÃO AZUL */
     div.stButton > button {
-        width: 100%;
-        border-radius: 10px;
         background-color: #3B82F6 !important;
         color: white !important;
         font-weight: bold;
+        border: none;
     }
 
     #MainMenu {visibility: hidden;}
@@ -99,8 +116,7 @@ with st.sidebar:
     
     if not st.session_state.admin:
         st.markdown("🔒 **Acesso ADM**")
-        # Ao pressionar Enter neste campo, o Streamlit recarrega e a lógica abaixo valida
-        pw = st.text_input("Digite a senha e aperte Enter", type="password")
+        pw = st.text_input("Senha", type="password", help="Digite e aperte Enter")
         if pw == SENHA_ADM:
             st.session_state.admin = True
             st.rerun()
@@ -115,12 +131,12 @@ with st.sidebar:
     st.markdown("---")
     menu = st.radio("Navegação", ["📊 Estoque", "🩺 Consultas", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
 
-# --- 5. LÓGICA PRINCIPAL ---
+# --- 5. TELAS ---
 if menu == "📊 Estoque":
-    st.title("💊 Controle de Estoque")
+    st.title("💊 Controle de Remédios")
     df = api_get("remedios")
     if df.empty:
-        st.info("Nenhum remédio encontrado.")
+        st.info("Nenhum remédio cadastrado.")
     else:
         hoje = datetime.now()
         if "alertas_enviados" not in st.session_state: st.session_state.alertas_enviados = []
@@ -148,23 +164,23 @@ if menu == "📊 Estoque":
             if st.session_state.admin:
                 with st.expander(f"Repor {r['nome']}"):
                     with st.form(f"rep_{r['id']}"):
-                        n_q = st.number_input("Qtd nova", min_value=1, value=30)
-                        n_v = st.number_input("Preço", value=float(r['preco']))
-                        if st.form_submit_button("Confirmar"):
+                        n_q = st.number_input("Qtd nova", min_value=1, value=30, key=f"q_{r['id']}")
+                        n_v = st.number_input("Preço", value=float(r['preco']), key=f"v_{r['id']}")
+                        if st.form_submit_button("Confirmar Reposição"):
                             total = estoque_atual + n_q
                             requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(total), "data_inicio": str(hoje.date()), "preco": float(n_v)})
                             requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(n_v), "data_compra": str(hoje.date())})
-                            st.success("Feito!"); time.sleep(1); st.cache_data.clear(); st.rerun()
+                            st.success("Atualizado!"); time.sleep(1); st.cache_data.clear(); st.rerun()
 
 elif menu == "🩺 Consultas":
-    st.title("🩺 Consultas")
+    st.title("🩺 Histórico")
     df_c = api_get("consultas")
     if not df_c.empty:
         for _, c in df_c.iterrows():
             st.markdown(f"""<div class="med-card"><b>{c['data_consulta'].strftime('%d/%m/%Y')}</b> - Dr. {c['medico']}<br>R$ {float(c.get('valor', 0)):.2f}</div>""", unsafe_allow_html=True)
 
 elif menu == "💰 Financeiro":
-    st.title("💰 Financeiro")
+    st.title("💰 Resumo")
     df_r, df_c = api_get("compras"), api_get("consultas")
     t1 = df_r['valor'].sum() if not df_r.empty else 0
     t2 = df_c['valor'].sum() if not df_c.empty else 0
@@ -174,29 +190,29 @@ elif menu == "💰 Financeiro":
 elif menu == "➕ Cadastro":
     if not st.session_state.admin: st.warning("🔒 Entre no modo ADM na lateral.")
     else:
-        tipo = st.selectbox("Tipo:", ["Remédio", "Consulta"])
-        with st.form("new"):
+        tipo = st.selectbox("Escolha:", ["Remédio", "Consulta"])
+        with st.form("new_cad"):
             if tipo == "Remédio":
                 n, q = st.text_input("Nome"), st.number_input("Qtd", value=30)
                 d, p = st.number_input("Dose/dia", value=1.0), st.number_input("Preço", value=0.0)
                 if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
                     requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio":n,"valor":float(p),"data_compra":str(datetime.now().date())})
-                    st.success("OK!"); time.sleep(1); st.rerun()
+                    st.success("Salvo!"); time.sleep(1); st.rerun()
             else:
                 m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
                 if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt)})
-                    st.success("OK!"); time.sleep(1); st.rerun()
+                    st.success("Salvo!"); time.sleep(1); st.rerun()
 
 elif menu == "🗑️ Remover":
-    if not st.session_state.admin: st.warning("🔒 Entre no modo ADM na lateral.")
+    if not st.session_state.admin: st.warning("🔒 Entre no modo ADM.")
     else:
-        tab = st.selectbox("Categoria:", ["remedios", "consultas", "compras"])
+        tab = st.selectbox("Tabela:", ["remedios", "consultas", "compras"])
         df_d = api_get(tab)
         if not df_d.empty:
             col = 'nome' if tab == 'remedios' else 'medico' if tab == 'consultas' else 'nome_remedio'
-            it = st.selectbox("Item:", df_d[col].tolist())
+            it = st.selectbox("Selecione:", df_d[col].tolist())
             if st.button("Remover"):
                 requests.delete(f"{URL_SUPABASE}{tab}?id=eq.{df_d[df_d[col] == it]['id'].values[0]}", headers=HEADERS)
                 st.rerun()
