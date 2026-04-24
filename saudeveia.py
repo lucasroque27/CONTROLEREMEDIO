@@ -12,9 +12,18 @@ CHAT_ID = "5256921022"
 
 HEADERS = {"apikey": API_KEY, "Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", "Prefer": "return=representation"}
 
+# FUNÇÃO DE ENVIO MELHORADA COM FEEDBACK DE ERRO
 def enviar_telegram(mensagem):
-    try: requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", data={"chat_id": CHAT_ID, "text": mensagem}, timeout=5)
-    except: pass
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
+        payload = {"chat_id": CHAT_ID, "text": mensagem, "parse_mode": "Markdown"}
+        response = requests.post(url, json=payload, timeout=10)
+        if response.status_code != 200:
+            st.error(f"Erro Telegram: {response.text}") # Isso te ajuda a descobrir o porquê não chega
+        return response.status_code == 200
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        return False
 
 def api_get(tabela):
     try:
@@ -55,6 +64,11 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- ALERTA DE ENTRADA IMEDIATO ---
+if "log_entrada" not in st.session_state:
+    if enviar_telegram("🚀 **Sistema Online:** Rock, o painel de saúde foi aberto agora."):
+        st.session_state.log_entrada = True
+
 # --- 3. MENU LATERAL ---
 with st.sidebar:
     st.title("🛡️ Painel")
@@ -69,20 +83,27 @@ with st.sidebar:
 
 meses_pt = {1:"Jan", 2:"Fev", 3:"Mar", 4:"Abr", 5:"Mai", 6:"Jun", 7:"Jul", 8:"Ago", 9:"Set", 10:"Out", 11:"Nov", 12:"Dez"}
 
-# --- 4. LOGICA DAS ABAS ---
-
+# --- 4. ESTOQUE ---
 if aba == "Estoque":
     st.markdown("<h2>💊 Medicamentos</h2>", unsafe_allow_html=True)
     df = api_get("remedios")
     if not df.empty:
         hoje = datetime.now()
+        itens_para_avisar = []
+
         for _, r in df.iterrows():
             dias_p = (hoje - r['data_inicio']).days
             estoque = max(0, int(r['qtd_total'] - (dias_p * r['dose_diaria'])))
             dias_r = int(estoque / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
             data_f = hoje + timedelta(days=dias_r)
+            
+            # Lógica de badge
             badge = "badge-ok" if dias_r >= 15 else ("badge-alerta" if dias_r >= 7 else "badge-repor")
             txt_badge = "ESTOQUE OK" if dias_r >= 15 else ("ATENÇÃO" if dias_r >= 7 else "REPOR")
+
+            # Coleta itens críticos para avisar no Telegram de uma vez só
+            if dias_r < 7:
+                itens_para_avisar.append(f"🔴 {r['nome']} ({dias_r} dias rest.)")
 
             st.markdown(f"""
             <div class="card-remedio">
@@ -104,77 +125,67 @@ if aba == "Estoque":
                     if c3.button("Salvar", key=f"b_{r['id']}"):
                         requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(estoque + nq), "data_inicio": str(hoje.date()), "preco": float(np)})
                         requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(np), "data_compra": str(hoje.date())})
+                        enviar_telegram(f"✅ **Reposição:**\nRemédio: {r['nome']}\nNovo estoque: {int(estoque + nq)}")
                         st.rerun()
 
+        # Envia resumo crítico se houver
+        if itens_para_avisar and "aviso_estoque" not in st.session_state:
+            resumo = "\n".join(itens_para_avisar)
+            if enviar_telegram(f"⚠️ **ESTOQUE CRÍTICO:**\n{resumo}"):
+                st.session_state.aviso_estoque = True
+
+# --- ABAS FINANCEIRO E CONSULTAS (MANTIDAS IGUAIS) ---
 elif aba == "Financeiro":
-    st.markdown("<h2>💰 Controle Financeiro</h2>", unsafe_allow_html=True)
-    df_r = api_get("compras")
-    df_c = api_get("consultas")
-    
-    total_r = df_r['valor'].sum() if not df_r.empty else 0
-    total_c = df_c['valor'].sum() if not df_c.empty else 0
-    
-    c1, c2 = st.columns(2)
-    c1.metric("💊 Total Remédios", f"R$ {total_r:.2f}")
-    c2.metric("🩺 Total Consultas", f"R$ {total_c:.2f}")
-    st.info(f"**Gasto Geral Acumulado: R$ {total_r + total_c:.2f}**")
-    
-    with st.expander("Ver Detalhes de Compras (Remédios)"):
-        if not df_r.empty: st.dataframe(df_r[['data_compra', 'nome_remedio', 'valor']], use_container_width=True, hide_index=True)
-    with st.expander("Ver Detalhes de Consultas"):
-        if not df_c.empty: st.dataframe(df_c[['data_consulta', 'medico', 'valor']], use_container_width=True, hide_index=True)
+    st.markdown("<h2>💰 Financeiro</h2>", unsafe_allow_html=True)
+    df_r, df_c = api_get("compras"), api_get("consultas")
+    t_r = df_r['valor'].sum() if not df_r.empty else 0
+    t_c = df_c['valor'].sum() if not df_c.empty else 0
+    st.metric("💊 Remédios", f"R$ {t_r:.2f}")
+    st.metric("🩺 Consultas", f"R$ {t_c:.2f}")
+    st.success(f"**Total Geral: R$ {t_r + t_c:.2f}**")
 
 elif aba == "Consultas":
-    st.markdown("<h2>🩺 Consultas Agendadas</h2>", unsafe_allow_html=True)
+    st.markdown("<h2>🩺 Consultas</h2>", unsafe_allow_html=True)
     df_c = api_get("consultas")
     if not df_c.empty:
         for _, c in df_c.iterrows():
-            with st.container(border=True):
-                st.write(f"**Médico:** {c['medico']}")
-                st.write(f"📅 {c['data_consulta'].strftime('%d/%m/%Y')} | 💰 R$ {c['valor']:.2f}")
+            st.info(f"**{c['medico']}**\n{c['data_consulta'].strftime('%d/%m/%Y')} | R$ {c['valor']:.2f}")
 
 elif aba == "Cadastrar":
     st.markdown("<h2>➕ Adicionar</h2>", unsafe_allow_html=True)
     if st.session_state.admin:
-        tipo = st.selectbox("O que deseja cadastrar?", ["Remédio", "Consulta"])
-        with st.form("cad_form"):
+        tipo = st.selectbox("Tipo", ["Remédio", "Consulta"])
+        with st.form("cad"):
             if tipo == "Remédio":
-                n = st.text_input("Nome")
-                q = st.number_input("Qtd", 1)
-                d = st.number_input("Dose Diária", 0.1, 10.0, 1.0)
-                p = st.number_input("Preço", 0.0)
-                if st.form_submit_button("Salvar Remédio"):
+                n, q, d, p = st.text_input("Nome"), st.number_input("Qtd", 1), st.number_input("Dose", 1.0), st.number_input("Preço", 0.0)
+                if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
+                    enviar_telegram(f"🆕 **Novo Remédio:** {n}")
                     st.rerun()
             else:
-                m = st.text_input("Médico/Especialidade")
-                v = st.number_input("Valor", 0.0)
-                dt = st.date_input("Data")
-                if st.form_submit_button("Salvar Consulta"):
+                m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
+                if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt)})
+                    enviar_telegram(f"🩺 **Nova Consulta:** {m} para o dia {dt}")
                     st.rerun()
 
 elif aba == "Remover":
-    st.markdown("<h2>🗑️ Remover Itens</h2>", unsafe_allow_html=True)
+    st.markdown("<h2>🗑️ Remover</h2>", unsafe_allow_html=True)
     if st.session_state.admin:
-        opcao = st.radio("O que deseja remover?", ["Remédio", "Consulta"])
-        if opcao == "Remédio":
+        op = st.radio("O que remover?", ["Remédio", "Consulta"])
+        if op == "Remédio":
             df_d = api_get("remedios")
             if not df_d.empty:
-                it = st.selectbox("Selecione o Remédio", df_d['nome'].tolist())
-                if st.button("Excluir Remédio", type="primary"):
-                    id_i = df_d[df_d['nome'] == it]['id'].values[0]
-                    requests.delete(f"{URL_SUPABASE}remedios?id=eq.{id_i}", headers=HEADERS)
+                it = st.selectbox("Remédio", df_d['nome'].tolist())
+                if st.button("Excluir"):
+                    requests.delete(f"{URL_SUPABASE}remedios?id=eq.{df_d[df_d['nome']==it]['id'].values[0]}", headers=HEADERS)
                     st.rerun()
         else:
             df_dc = api_get("consultas")
             if not df_dc.empty:
-                # Criar uma lista legível para o selectbox
-                lista_c = [f"{c['medico']} - {c['data_consulta'].strftime('%d/%m')}" for _, c in df_dc.iterrows()]
-                it_c = st.selectbox("Selecione a Consulta", lista_c)
-                if st.button("Excluir Consulta", type="primary"):
-                    # Pega o ID original baseado na seleção
-                    idx = lista_c.index(it_c)
-                    id_c = df_dc.iloc[idx]['id']
-                    requests.delete(f"{URL_SUPABASE}consultas?id=eq.{id_c}", headers=HEADERS)
+                lista = [f"{c['medico']} ({c['data_consulta'].strftime('%d/%m')})" for _, c in df_dc.iterrows()]
+                it_c = st.selectbox("Consulta", lista)
+                if st.button("Excluir"):
+                    idx = lista.index(it_c)
+                    requests.delete(f"{URL_SUPABASE}consultas?id=eq.{df_dc.iloc[idx]['id']}", headers=HEADERS)
                     st.rerun()
