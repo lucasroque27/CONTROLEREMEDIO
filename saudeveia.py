@@ -116,7 +116,7 @@ with st.sidebar:
 # --- 5. LÓGICA DAS TELAS ---
 
 if menu == "📊 Dashboard":
-    st.title("📊 Resumo de Saúde")
+    st.title("📊 Controle de Medicamentos")
     df = api_get("remedios")
     
     if df.empty:
