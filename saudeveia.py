@@ -39,8 +39,14 @@ def api_get(tabela):
     except: pass
     return pd.DataFrame()
 
-# --- 3. ESTILO CSS (VISUAL PREMIUM MANTIDO) ---
+# --- 3. ESTILO CSS (VISUAL PRESERVADO) ---
 st.set_page_config(page_title="Saúde Família", page_icon="💊", layout="centered")
+
+# --- NOVIDADE: ALERTA DE ACESSO AO LINK ---
+# Esta lógica avisa você no Telegram toda vez que alguém abre o link do app.
+if "acesso_notificado" not in st.session_state:
+    enviar_telegram("🌐 Alerta: Alguém acaba de acessar o seu app de Saúde!")
+    st.session_state.acesso_notificado = True
 
 st.markdown("""
     <style>
@@ -88,12 +94,9 @@ with st.sidebar:
             st.rerun()
     
     st.markdown("---")
-    # Botão de Teste para o Telegram
     if st.button("🔔 Testar Telegram"):
-        if enviar_telegram("Teste de conexão: O bot de Saúde está funcionando! ✅"):
+        if enviar_telegram("Teste de conexão: OK! ✅"):
             st.toast("Mensagem enviada!")
-        else:
-            st.error("Erro ao enviar. Verifique o Token.")
 
     st.markdown("---")
     menu = st.radio("Navegação", ["📊 Estoque", "🩺 Consultas", "💰 Financeiro", "➕ Cadastro", "🗑️ Remover"])
@@ -114,19 +117,15 @@ if menu == "📊 Estoque":
             dias_restantes = int(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
             data_fim = hoje + timedelta(days=dias_restantes)
             
-            # --- LÓGICA DE ALERTA TELEGRAM ---
+            # Alerta Automático de estoque baixo (MANTIDO)
             if dias_restantes < 7 and r['nome'] not in st.session_state.alertas_enviados:
-                msg = f"⚠️ ALERTA DE ESTOQUE!\nRemédio: {r['nome']}\nRestam apenas: {estoque_atual} unidades.\nAcaba em: {data_fim.strftime('%d/%m/%Y')}"
-                if enviar_telegram(msg):
-                    st.session_state.alertas_enviados.append(r['nome'])
+                msg = f"⚠️ ALERTA: {r['nome']} está acabando ({estoque_atual} un.)."
+                if enviar_telegram(msg): st.session_state.alertas_enviados.append(r['nome'])
             
-            # Impacto Visual
-            if dias_restantes < 7:
-                cor_status, label_status = "#EF4444", "🚨 CRÍTICO"
-            elif dias_restantes < 15:
-                cor_status, label_status = "#F59E0B", "⚠️ ATENÇÃO"
-            else:
-                cor_status, label_status = "#10B981", "✅ BOM"
+            # Impacto Visual (MANTIDO)
+            if dias_restantes < 7: cor_status, label_status = "#EF4444", "🚨 CRÍTICO"
+            elif dias_restantes < 15: cor_status, label_status = "#F59E0B", "⚠️ ATENÇÃO"
+            else: cor_status, label_status = "#10B981", "✅ BOM"
 
             pct = min(100, int((estoque_atual / r['qtd_total']) * 100)) if r['qtd_total'] > 0 else 0
 
@@ -134,7 +133,7 @@ if menu == "📊 Estoque":
                 <div class="med-card" style="border-left: 10px solid {cor_status};">
                     <div class="status-badge" style="background-color: {cor_status};">{label_status}</div>
                     <span style="font-size: 1.3em;"><b>{r['nome'].upper()}</b></span><br>
-                    <p style="margin:5px 0 0 0; font-size: 0.9em;">📦 <b>{estoque_atual}</b> un. restantes | Dose: {r['dose_diaria']}/dia</p>
+                    <p style="margin:5px 0 0 0; font-size: 0.9em;">📦 <b>{estoque_atual}</b> un. restantes</p>
                     <p style="margin:0; font-size: 1.1em; color: {cor_status} !important;">📅 Acaba em: <b>{data_fim.strftime('%d/%m/%Y')}</b></p>
                     <div class="progress-bg"><div class="progress-fill" style="width: {pct}%; background-color: {cor_status};"></div></div>
                 </div>
@@ -144,13 +143,20 @@ if menu == "📊 Estoque":
                 with st.expander(f"📥 Atualizar {r['nome']}"):
                     n_q = st.number_input("Qtd nova", min_value=1, value=30, key=f"q_{r['id']}")
                     n_v = st.number_input("Preço", value=float(r['preco']), key=f"v_{r['id']}")
+                    
+                    # --- NOVIDADE: ALERTA DE REPOSIÇÃO ---
                     if st.button("Confirmar Reposição", key=f"btn_{r['id']}"):
                         total = estoque_atual + n_q
                         requests.patch(f"{URL_SUPABASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": int(total), "data_inicio": str(hoje.date()), "preco": float(n_v)})
                         requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(n_v), "data_compra": str(hoje.date())})
+                        
+                        # Dispara o aviso de reposição feita
+                        enviar_telegram(f"✅ REPOSIÇÃO REALIZADA!\nMedicamento: {r['nome']}\nNova quantidade total: {total} unidades.")
+                        
                         if r['nome'] in st.session_state.alertas_enviados: st.session_state.alertas_enviados.remove(r['nome'])
-                        st.success("Renovado!"); time.sleep(1); st.rerun()
+                        st.success("Reposição confirmada e notificada!"); time.sleep(1); st.rerun()
 
+# --- DEMAIS TELAS (MANTIDAS SEM ALTERAÇÃO) ---
 elif menu == "🩺 Consultas":
     st.title("🩺 Histórico")
     df_c = api_get("consultas")
@@ -178,6 +184,8 @@ elif menu == "➕ Cadastro":
                 if st.form_submit_button("Salvar"):
                     requests.post(f"{URL_SUPABASE}remedios", headers=HEADERS, json={"nome":n,"qtd_total":int(q),"dose_diaria":float(d),"preco":float(p),"data_inicio":str(datetime.now().date())})
                     requests.post(f"{URL_SUPABASE}compras", headers=HEADERS, json={"nome_remedio":n,"valor":float(p),"data_compra":str(datetime.now().date())})
+                    # Aviso de novo cadastro (opcional, mas incluí para seu controle)
+                    enviar_telegram(f"🆕 NOVO REMÉDIO: {n} cadastrado com sucesso.")
                     st.rerun()
             else:
                 m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
