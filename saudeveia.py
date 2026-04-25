@@ -3,9 +3,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 import requests
 
-# --- 1. CONFIGURAÇÕES E PILARES (Telegram & Supabase) ---
+# --- 1. CONFIGURAÇÕES E PILARES (Estabilidade e Conectividade) ---
 URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
-API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZES6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
+API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
 HEADERS = {"apikey": API_KEY, "Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", "Prefer": "representation"}
 
 def enviar_telegram(msg):
@@ -14,45 +14,52 @@ def enviar_telegram(msg):
                       json={"chat_id": "5256921022", "text": msg, "parse_mode": "Markdown"}, timeout=5)
     except: pass
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30) # Cache curto para manter os dados sempre frescos
 def buscar_dados(tabela):
     try:
         res = requests.get(f"{URL_BASE}{tabela}?select=*&order=id.desc", headers=HEADERS, timeout=10)
         if res.status_code == 200:
             df = pd.DataFrame(res.json())
+            # Pilar: Datas em formato correto para o Python
             for col in ['data_inicio', 'data_consulta', 'data_compra']:
                 if not df.empty and col in df.columns: df[col] = pd.to_datetime(df[col])
             return df
     except: pass
     return pd.DataFrame()
 
-# --- 2. INTERFACE E ESTILO ---
+# --- 2. INTERFACE E ESTILO (Profissional e Limpo) ---
 st.set_page_config(page_title="Gestão de Saúde", layout="centered")
 st.markdown("""
     <style>
-    .card { background: white; border-radius: 10px; padding: 15px; margin-bottom: 10px; border: 1px solid #eee; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
-    .label { color: #666; font-size: 0.8rem; margin-bottom: 0px; }
-    .value { font-size: 1.3rem; font-weight: bold; color: #333; margin-top: -5px; }
+    .card { background: white; border-radius: 10px; padding: 18px; margin-bottom: 12px; border: 1px solid #eee; box-shadow: 2px 2px 8px rgba(0,0,0,0.05); }
+    .label { color: #666; font-size: 0.85rem; margin-bottom: 2px; }
+    .value { font-size: 1.2rem; font-weight: bold; color: #2c3e50; margin-top: -5px; }
+    .status-tag { padding: 3px 8px; border-radius: 5px; font-size: 0.75rem; font-weight: bold; float: right; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. LOGIN E NAVEGAÇÃO ---
+# --- 3. LOGIN E NAVEGAÇÃO (Pilar: Acesso Seguro) ---
 if "admin" not in st.session_state: st.session_state.admin = False
 
 with st.sidebar:
     st.title("💊 Gestão")
     if not st.session_state.admin:
-        pw = st.text_input("Senha", type="password")
-        if st.button("Acessar", use_container_width=True) or pw == "1234":
+        pw = st.text_input("Senha ADM", type="password", key="login_pass")
+        if st.button("Acessar", use_container_width=True) or (pw == "1234"):
             if pw == "1234":
                 st.session_state.admin = True
                 st.rerun()
+            elif pw != "": st.error("Senha inválida")
     else:
-        if st.button("Sair"): st.session_state.admin = False; st.rerun()
+        st.success("Modo ADM Ativo")
+        if st.button("Sair", use_container_width=True):
+            st.session_state.admin = False
+            st.rerun()
     
-    aba = st.radio("Ir para:", ["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"], key="nav_main")
+    # Chave única para o rádio para não quebrar o código
+    aba = st.radio("Navegação:", ["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"], key="main_nav_radio")
 
-# --- 4. TELAS ---
+# --- 4. TELAS (Funcionalidades Preservadas) ---
 
 if aba == "Estoque":
     st.subheader("📋 Resumo de Medicamentos")
@@ -60,39 +67,38 @@ if aba == "Estoque":
     if not df.empty:
         hoje = datetime.now()
         for _, r in df.iterrows():
-            # AJUSTE PARA DOSES FRACIONADAS (Pilar: Lógica de Precisão)
-            dias_passados = (hoje - r['data_inicio']).days
-            # Usamos float para permitir meios comprimidos (ex: 1.5)
-            estoque_atual = max(0.0, float(r['qtd_total']) - (dias_passados * float(r['dose_diaria'])))
-            dias_restantes = float(estoque_atual / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
-            data_fim = hoje + timedelta(days=dias_restantes)
+            # Pilar: Lógica de Estoque com Suporte a Doses Fracionadas (Ex: 1.5)
+            dias_p = (hoje - r['data_inicio']).days
+            estoque_at = max(0.0, float(r['qtd_total']) - (dias_p * float(r['dose_diaria'])))
+            dias_r = float(estoque_at / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
+            data_f = hoje + timedelta(days=dias_r)
             
-            status_color = "#27ae60" if dias_restantes > 7 else "#e74c3c"
+            cor = "#27ae60" if dias_r > 7 else "#e67e22" if dias_r > 3 else "#e74c3c"
+            txt_status = "OK" if dias_r > 7 else "ALERTA"
             
             st.markdown(f"""
             <div class="card">
-                <div style="display:flex; justify-content: space-between;">
-                    <span style="font-weight:bold; color:{status_color}">● {r['nome']}</span>
-                    <span style="font-size:0.8rem; color:#999">{int(dias_restantes)} dias restantes</span>
-                </div>
-                <hr style="margin: 10px 0; border:0; border-top:1px solid #eee;">
+                <span class="status-tag" style="background: {cor}22; color: {cor};">{txt_status}</span>
+                <div style="font-weight:bold; color:#34495e; font-size: 1.1rem;">💊 {r['nome'].upper()}</div>
+                <hr style="margin: 12px 0; border:0; border-top:1px solid #f5f5f5;">
                 <div style="display: flex; justify-content: space-between; text-align: center;">
-                    <div><p class="label">Qtd Atual</p><p class="value">{estoque_atual:g}</p></div>
+                    <div><p class="label">Qtd</p><p class="value">{estoque_at:g}</p></div>
                     <div><p class="label">Dose/Dia</p><p class="value">{r['dose_diaria']:g}</p></div>
-                    <div><p class="label">Acaba em</p><p class="value">{data_fim.strftime('%d/%m/%Y')}</p></div>
+                    <div><p class="label">Restam</p><p class="value">{int(dias_r)}d</p></div>
+                    <div><p class="label">Acaba em</p><p class="value">{data_f.strftime('%d/%m/%Y')}</p></div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
             if st.session_state.admin:
-                with st.expander(f"Ajustar estoque de {r['nome']}"):
+                with st.expander(f"Ajustar {r['nome']}"):
                     c1, c2 = st.columns(2)
-                    add_qtd = c1.number_input("Adicionar Qtd", 0.0, 1000.0, 30.0, key=f"add_{r['id']}")
-                    novo_preco = c2.number_input("Preço R$", 0.0, 100000.0, float(r['preco']), key=f"prc_{r['id']}")
-                    if st.button("Atualizar", key=f"btn_{r['id']}"):
-                        nova_qtd = estoque_atual + add_qtd
-                        requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": nova_qtd, "data_inicio": str(hoje.date()), "preco": novo_preco})
-                        requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": novo_preco, "data_compra": str(hoje.date())})
+                    add = c1.number_input("Adicionar Qtd", 0.0, 500.0, 30.0, key=f"add_{r['id']}")
+                    prc = c2.number_input("Preço R$", 0.0, 50000.0, float(r['preco']), key=f"prc_{r['id']}")
+                    if st.button("Salvar Ajuste", key=f"btn_{r['id']}"):
+                        nova_qtd = estoque_at + add
+                        requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": nova_qtd, "data_inicio": str(hoje.date()), "preco": prc})
+                        requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": prc, "data_compra": str(hoje.date())})
                         enviar_telegram(f"✅ Estoque de {r['nome']} atualizado para {nova_qtd:g} unidades.")
                         st.cache_data.clear(); st.rerun()
 
@@ -100,61 +106,63 @@ elif aba == "Financeiro":
     st.subheader("💰 Controle de Gastos")
     df_r, df_c = buscar_dados("compras"), buscar_dados("consultas")
     
-    gastos = []
+    financeiro = []
     if not df_r.empty:
-        temp_r = df_r[['data_compra', 'valor']].rename(columns={'data_compra': 'Data'})
-        temp_r['Categoria'] = 'Remédio'
-        gastos.append(temp_r)
+        r_t = df_r[['data_compra', 'valor']].rename(columns={'data_compra': 'Data'})
+        r_t['Tipo'] = 'Remédios'
+        financeiro.append(r_t)
     if not df_c.empty:
-        temp_c = df_c[['data_consulta', 'valor']].rename(columns={'data_consulta': 'Data'})
-        temp_c['Categoria'] = 'Consulta'
-        gastos.append(temp_c)
+        c_t = df_c[['data_consulta', 'valor']].rename(columns={'data_consulta': 'Data'})
+        c_t['Tipo'] = 'Consultas'
+        financeiro.append(c_t)
     
-    if gastos:
-        df_g = pd.concat(gastos)
-        df_g['Mês'] = df_g['Data'].dt.strftime('%m/%Y')
-        st.bar_chart(df_g.groupby(['Mês', 'Categoria'])['valor'].sum().reset_index(), x="Mês", y="valor", color="Categoria")
-        st.metric("Total Acumulado", f"R$ {df_g['valor'].sum():,.2f}")
+    if financeiro:
+        df_fin = pd.concat(financeiro)
+        df_fin['Mês'] = df_fin['Data'].dt.strftime('%m/%Y')
+        # Gráfico por ano/mês e categoria (Remédios vs Consultas)
+        st.bar_chart(df_fin.groupby(['Mês', 'Tipo'])['valor'].sum().reset_index(), x="Mês", y="valor", color="Tipo")
+        st.metric("Total Investido", f"R$ {df_fin['valor'].sum():,.2f}")
+    else: st.info("Sem dados financeiros registrados.")
 
 elif aba == "Consultas":
     st.subheader("🩺 Histórico de Consultas")
     df = buscar_dados("consultas")
     if not df.empty:
         for _, c in df.iterrows():
-            st.success(f"**{c['medico']}** | 📅 {c['data_consulta'].strftime('%d/%m/%Y')} | R$ {c['valor']:.2f}")
+            st.info(f"📅 **{c['data_consulta'].strftime('%d/%m/%Y')}** | {c['medico']} | R$ {c['valor']:.2f}")
 
 elif aba == "Cadastrar":
     if st.session_state.admin:
-        tipo = st.radio("O que deseja cadastrar?", ["Remédio", "Consulta"], horizontal=True)
-        with st.form("form_cadastro", clear_on_submit=True):
-            if tipo == "Remédio":
-                nome = st.text_input("Nome do Medicamento")
-                qtd = st.number_input("Qtd Inicial (Total de comprimidos)", 0.0, step=0.5)
-                dose = st.number_input("Dose Diária (Ex: 1.5)", 0.0, step=0.5)
-                preco = st.number_input("Preço R$", 0.0, 100000.0)
+        sel = st.radio("Tipo de Cadastro:", ["Medicamento", "Consulta"], horizontal=True, key="cad_tipo")
+        with st.form("form_novo", clear_on_submit=True):
+            if sel == "Medicamento":
+                n = st.text_input("Nome")
+                q = st.number_input("Qtd Inicial", 0.0, step=0.5)
+                d = st.number_input("Dose Diária (Ex: 1.5)", 0.0, step=0.5)
+                p = st.number_input("Preço R$", 0.0)
                 if st.form_submit_button("Salvar Medicamento"):
-                    if nome and qtd > 0:
-                        res = requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome": nome, "qtd_total": float(qtd), "dose_diaria": float(dose), "preco": preco, "data_inicio": str(datetime.now().date())})
-                        if res.status_code in [200, 201]:
-                            enviar_telegram(f"🆕 Cadastrado: {nome} ({qtd:g} un)"); st.cache_data.clear(); st.success("Salvo!"); st.rerun()
+                    if n and q > 0:
+                        requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome":n, "qtd_total":float(q), "dose_diaria":float(d), "preco":float(p), "data_inicio":str(datetime.now().date())})
+                        enviar_telegram(f"🆕 Novo remédio cadastrado: {n}")
+                        st.cache_data.clear(); st.rerun()
             else:
-                med = st.text_input("Médico / Especialidade")
-                vlr = st.number_input("Valor da Consulta", 0.0)
-                dt_c = st.date_input("Data", format="DD/MM/YYYY")
+                m = st.text_input("Médico / Clínica")
+                v = st.number_input("Valor R$", 0.0)
+                dt = st.date_input("Data da Consulta")
                 if st.form_submit_button("Salvar Consulta"):
-                    if med:
-                        requests.post(f"{URL_BASE}consultas", headers=HEADERS, json={"medico": med, "valor": vlr, "data_consulta": str(dt_c)})
-                        st.cache_data.clear(); st.success("Consulta Salva!"); st.rerun()
-    else: st.warning("Acesso restrito.")
+                    if m:
+                        requests.post(f"{URL_BASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":str(dt)})
+                        st.cache_data.clear(); st.rerun()
+    else: st.warning("Área restrita ao administrador.")
 
 elif aba == "Remover":
     if st.session_state.admin:
-        op = st.selectbox("Apagar de:", ["remedios", "consultas"])
-        df_del = buscar_dados(op)
+        tab = st.selectbox("Remover de:", ["remedios", "consultas"], key="del_tab")
+        df_del = buscar_dados(tab)
         if not df_del.empty:
-            label_col = 'nome' if op == 'remedios' else 'medico'
-            item = st.selectbox("Escolha o registro:", df_del[label_col].tolist())
-            if st.button("🗑️ Confirmar Exclusão", type="primary"):
-                id_item = df_del[df_del[label_col] == item]['id'].values[0]
-                requests.delete(f"{URL_BASE}{op}?id=eq.{id_item}", headers=HEADERS)
+            col = 'nome' if tab == 'remedios' else 'medico'
+            item = st.selectbox("Selecione o registro:", df_del[col].tolist(), key="del_item")
+            if st.button("🗑️ Excluir Registro", type="primary", use_container_width=True):
+                id_id = df_del[df_del[col] == item]['id'].values[0]
+                requests.delete(f"{URL_BASE}{tab}?id=eq.{id_id}", headers=HEADERS)
                 st.cache_data.clear(); st.rerun()
