@@ -14,7 +14,133 @@ HEADERS = {
     "Prefer": "return=minimal"
 }
 
+def enviar_telegram(msg):import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+import requests
+import time
+
+# --- CONFIGURAÇÃO E CONEXÃO ---
+URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
+API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
+HEADERS = {
+    "apikey": API_KEY, 
+    "Authorization": f"Bearer {API_KEY}", 
+    "Content-Type": "application/json",
+    "Prefer": "return=minimal"
+}
+
 def enviar_telegram(msg):
+    try:
+        requests.post(f"https://api.telegram.org/bot8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM/sendMessage", 
+                      json={"chat_id": "5256921022", "text": msg}, timeout=5)
+    except: pass
+
+@st.cache_data(ttl=1)
+def buscar_dados(tabela):
+    try:
+        res = requests.get(f"{URL_BASE}{tabela}?select=*&order=id.desc", headers=HEADERS, timeout=10)
+        if res.status_code == 200:
+            df = pd.DataFrame(res.json())
+            for col in ['data_inicio', 'data_consulta', 'data_compra']:
+                if not df.empty and col in df.columns: 
+                    df[col] = pd.to_datetime(df[col])
+            return df
+    except: pass
+    return pd.DataFrame()
+
+# --- INTERFACE ---
+st.set_page_config(page_title="Gestão Saúde", layout="centered")
+if "admin" not in st.session_state: st.session_state.admin = False
+
+with st.sidebar:
+    st.title("💊 Menu")
+    if not st.session_state.admin:
+        pw = st.text_input("Senha", type="password")
+        if st.button("Acessar") or pw == "1234":
+            if pw == "1234": st.session_state.admin = True; st.rerun()
+    else:
+        if st.button("Sair"): st.session_state.admin = False; st.rerun()
+    aba = st.radio("Ir para:", ["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"])
+
+# --- FUNCIONALIDADES PILARES ---
+
+if aba == "Estoque":
+    st.subheader("📋 Status")
+    df = buscar_dados("remedios")
+    if not df.empty:
+        hoje = datetime.now()
+        for _, r in df.iterrows():
+            d_passados = (hoje - r['data_inicio']).days
+            # Pilar: Doses fracionadas (1.5) e cálculo de dias restantes
+            est_at = max(0.0, float(r['qtd_total']) - (d_passados * float(r['dose_diaria'])))
+            d_restantes = float(est_at / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
+            data_f = hoje + timedelta(days=d_restantes)
+            
+            with st.container():
+                st.markdown(f"**{r['nome'].upper()}**")
+                st.write(f"Estoque: {est_at:g} | Dose: {r['dose_diaria']:g} | Fim em: {data_f.strftime('%d/%m/%Y')}")
+                
+                if st.session_state.admin:
+                    with st.expander("Ajustar"):
+                        v_add = st.number_input("Adicionar Qtd", 0.0, 10000.0, 0.0, key=f"add_{r['id']}")
+                        v_prc = st.number_input("Preço R$", 0.0, 1000000.0, float(r['preco']), key=f"prc_{r['id']}")
+                        if st.button("Salvar", key=f"btn_{r['id']}", use_container_width=True):
+                            # Reset do pilar de contagem
+                            pay = {"qtd_total": float(est_at + v_add), "data_inicio": hoje.strftime('%Y-%m-%d'), "preco": float(v_prc)}
+                            res = requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json=pay)
+                            if res.status_code in [200, 204]:
+                                st.success("Atualizado!"); st.cache_data.clear(); time.sleep(1); st.rerun()
+
+elif aba == "Financeiro":
+    st.subheader("💰 Gastos")
+    df_r = buscar_dados("remedios")
+    df_c = buscar_dados("consultas")
+    # Pilar: Financeiro dinâmico que se ajusta ao excluir itens
+    total = (df_r['preco'].sum() if not df_r.empty else 0) + (df_c['valor'].sum() if not df_c.empty else 0)
+    st.metric("Investimento Total", f"R$ {total:,.2f}")
+    if not df_r.empty or not df_c.empty:
+        st.write("Gráfico de Custos por Categoria")
+        # Gráfico simplificado para evitar bugs de visualização
+        data_grafico = []
+        if not df_r.empty: data_grafico.append(pd.DataFrame({'Tipo': 'Remédios', 'Valor': df_r['preco']}))
+        if not df_c.empty: data_grafico.append(pd.DataFrame({'Tipo': 'Consultas', 'Valor': df_c['valor']}))
+        st.bar_chart(pd.concat(data_grafico), x='Tipo', y='Valor')
+
+elif aba == "Consultas":
+    st.subheader("🩺 Histórico")
+    df = buscar_dados("consultas")
+    if not df.empty:
+        for _, c in df.iterrows():
+            st.info(f"{c['data_consulta'].strftime('%d/%m/%Y')} | {c['medico']} | R$ {float(c['valor']):.2f}")
+
+elif aba == "Cadastrar":
+    if st.session_state.admin:
+        tipo = st.selectbox("Tipo:", ["Remédio", "Consulta"])
+        with st.form("cad"):
+            if tipo == "Remédio":
+                n, q, d, p = st.text_input("Nome"), st.number_input("Qtd"), st.number_input("Dose/Dia"), st.number_input("Preço")
+                if st.form_submit_button("SALVAR"):
+                    r = requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome": n, "qtd_total": float(q), "dose_diaria": float(d), "preco": float(p), "data_inicio": datetime.now().strftime('%Y-%m-%d')})
+                    if r.status_code in [200, 201]: 
+                        enviar_telegram(f"Novo: {n}"); st.success("Salvo!"); st.cache_data.clear(); time.sleep(1); st.rerun()
+            else:
+                m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
+                if st.form_submit_button("SALVAR"):
+                    r = requests.post(f"{URL_BASE}consultas", headers=HEADERS, json={"medico": m, "valor": float(v), "data_consulta": dt.strftime('%Y-%m-%d')})
+                    if r.status_code in [200, 201]: st.success("Salvo!"); st.cache_data.clear(); time.sleep(1); st.rerun()
+
+elif aba == "Remover":
+    if st.session_state.admin:
+        tab = st.selectbox("Tabela:", ["remedios", "consultas"])
+        df_rem = buscar_dados(tab)
+        if not df_rem.empty:
+            col = 'nome' if tab == 'remedios' else 'medico'
+            item = st.selectbox("Escolha:", df_rem[col].tolist())
+            if st.button("🗑️ REMOVER"):
+                idx = df_rem[df_rem[col] == item]['id'].values[0]
+                r = requests.delete(f"{URL_BASE}{tab}?id=eq.{idx}", headers=HEADERS)
+                if r.status_code in [200, 204]: st.success("Removido!"); st.cache_data.clear(); time.sleep(1); st.rerun()
     try:
         requests.post(f"https://api.telegram.org/bot8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM/sendMessage", 
                       json={"chat_id": "5256921022", "text": msg}, timeout=5)
