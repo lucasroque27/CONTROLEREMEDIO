@@ -10,8 +10,7 @@ API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6
 HEADERS = {
     "apikey": API_KEY, 
     "Authorization": f"Bearer {API_KEY}", 
-    "Content-Type": "application/json", 
-    "Prefer": "return=representation"
+    "Content-Type": "application/json"
 }
 
 def enviar_telegram(msg):
@@ -20,7 +19,7 @@ def enviar_telegram(msg):
                       json={"chat_id": "5256921022", "text": msg, "parse_mode": "Markdown"}, timeout=5)
     except: pass
 
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=1) # Cache mínimo para garantir atualização em tempo real
 def buscar_dados(tabela):
     try:
         res = requests.get(f"{URL_BASE}{tabela}?select=*&order=id.desc", headers=HEADERS, timeout=10)
@@ -68,7 +67,6 @@ if aba == "Estoque":
     if not df.empty:
         hoje = datetime.now()
         for _, r in df.iterrows():
-            # PILAR: CÁLCULO DE DOSE FRACIONADA (1.5)
             d_passados = (hoje - r['data_inicio']).days
             est_at = max(0.0, float(r['qtd_total']) - (d_passados * float(r['dose_diaria'])))
             d_restantes = float(est_at / r['dose_diaria']) if r['dose_diaria'] > 0 else 0
@@ -94,10 +92,17 @@ if aba == "Estoque":
                     v_prc = c2.number_input("Novo Preço R$", 0.0, 50000.0, float(r['preco']), key=f"prc_{r['id']}")
                     if st.button("Salvar Ajuste", key=f"btn_{r['id']}", use_container_width=True):
                         nova_qtd = est_at + v_add
-                        requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": float(nova_qtd), "data_inicio": str(hoje.date()), "preco": float(v_prc)})
+                        # PILAR: Atualização de Estoque com Reset de Data
+                        res_p = requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": float(nova_qtd), "data_inicio": str(hoje.date()), "preco": float(v_prc)})
                         requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(v_prc), "data_compra": str(hoje.date())})
-                        st.success("Estoque Atualizado!")
-                        st.cache_data.clear(); time.sleep(1); st.rerun()
+                        
+                        if res_p.status_code in [200, 201, 204]:
+                            st.success("Estoque Atualizado!")
+                            st.cache_data.clear()
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(f"Erro ao ajustar: {res_p.status_code}")
 
 elif aba == "Financeiro":
     st.subheader("💰 Gastos Atuais")
@@ -112,7 +117,6 @@ elif aba == "Financeiro":
         df_f = pd.concat(f_gastos)
         df_f['Mês'] = df_f['Data'].dt.strftime('%m/%Y')
         st.bar_chart(df_f.groupby(['Mês', 'Tipo'])['valor'].sum().reset_index(), x="Mês", y="valor", color="Tipo")
-        # PILAR: FINANCEIRO DINÂMICO (Diminui ao excluir)
         st.metric("Total Investido (Itens Ativos)", f"R$ {df_f['valor'].sum():,.2f}")
 
 elif aba == "Consultas":
@@ -136,8 +140,9 @@ elif aba == "Cadastrar":
                     if f_nome and f_qtd > 0:
                         pay = {"nome": f_nome, "qtd_total": float(f_qtd), "dose_diaria": float(f_dose), "preco": float(f_preco), "data_inicio": str(datetime.now().date())}
                         r = requests.post(f"{URL_BASE}remedios", headers=HEADERS, json=pay)
-                        if r.status_code in [200, 201]:
-                            st.success(f"✅ {f_nome} salvo!"); enviar_telegram(f"🆕 Remédio: {f_nome}")
+                        if r.status_code in [200, 201, 204]:
+                            st.success(f"✅ {f_nome} salvo!")
+                            enviar_telegram(f"🆕 Remédio: {f_nome}")
                             st.cache_data.clear(); time.sleep(1); st.rerun()
                         else: st.error(f"Erro no banco: {r.status_code}")
             else:
@@ -148,10 +153,9 @@ elif aba == "Cadastrar":
                     if f_med:
                         pay = {"medico": f_med, "valor": float(f_vlr), "data_consulta": str(f_dat)}
                         r = requests.post(f"{URL_BASE}consultas", headers=HEADERS, json=pay)
-                        if r.status_code in [200, 201]:
+                        if r.status_code in [200, 201, 204]:
                             st.success("✅ Consulta salva!"); st.cache_data.clear(); time.sleep(1); st.rerun()
                         else: st.error(f"Erro no banco: {r.status_code}")
-    else: st.warning("Área de ADM.")
 
 elif aba == "Remover":
     if st.session_state.admin:
@@ -164,4 +168,4 @@ elif aba == "Remover":
                 id_rem = df_rem[df_rem[col_name] == item_rem]['id'].values[0]
                 r = requests.delete(f"{URL_BASE}{tab_rem}?id=eq.{id_rem}", headers=HEADERS)
                 if r.status_code in [200, 204]:
-                    st.success("✅ Excluído! Financeiro atualizado."); st.cache_data.clear(); time.sleep(1); st.rerun()
+                    st.success("✅ Excluído!"); st.cache_data.clear(); time.sleep(1); st.rerun()
