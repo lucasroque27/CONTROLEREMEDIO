@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import requests
 
-# --- 1. CONFIGURAÇÕES E PILARES ---
+# --- 1. CONFIGURAÇÕES E PILARES (Estabilidade e Conectividade) ---
 URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
 API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
 HEADERS = {"apikey": API_KEY, "Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", "Prefer": "representation"}
@@ -14,7 +14,7 @@ def enviar_telegram(msg):
                       json={"chat_id": "5256921022", "text": msg, "parse_mode": "Markdown"}, timeout=5)
     except: pass
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=5)
 def buscar_dados(tabela):
     try:
         res = requests.get(f"{URL_BASE}{tabela}?select=*&order=id.desc", headers=HEADERS, timeout=10)
@@ -89,11 +89,8 @@ if aba == "Estoque":
 elif aba == "Financeiro":
     st.subheader("💰 Controle de Gastos")
     df_r, df_c = buscar_dados("remedios"), buscar_dados("consultas")
-    
-    # Pilar: Financeiro Dinâmico (Soma apenas o que NÃO foi excluído)
     gastos = []
     if not df_r.empty:
-        # Pega o preço atual dos remédios cadastrados
         df_r['Tipo'] = 'Remédios'
         gastos.append(df_r[['data_inicio', 'preco', 'Tipo']].rename(columns={'data_inicio': 'Data', 'preco': 'valor'}))
     if not df_c.empty:
@@ -105,7 +102,7 @@ elif aba == "Financeiro":
         df_fin['Mês'] = df_fin['Data'].dt.strftime('%m/%Y')
         st.bar_chart(df_fin.groupby(['Mês', 'Tipo'])['valor'].sum().reset_index(), x="Mês", y="valor", color="Tipo")
         st.metric("Total (Itens Ativos)", f"R$ {df_fin['valor'].sum():,.2f}")
-    else: st.info("Nenhum dado ativo para calcular.")
+    else: st.info("Sem dados ativos.")
 
 elif aba == "Consultas":
     st.subheader("🩺 Consultas")
@@ -116,18 +113,27 @@ elif aba == "Consultas":
 
 elif aba == "Cadastrar":
     if st.session_state.admin:
-        tipo = st.radio("Cadastrar:", ["Remédio", "Consulta"], horizontal=True)
-        with st.form("f_novo", clear_on_submit=True):
-            if tipo == "Remédio":
-                n, q, d, p = st.text_input("Nome"), st.number_input("Qtd", 0.0), st.number_input("Dose", 0.0), st.number_input("Preço", 0.0)
-                if st.form_submit_button("Salvar"):
-                    requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome":n, "qtd_total":q, "dose_diaria":d, "preco":p, "data_inicio":str(datetime.now().date())})
-                    enviar_telegram(f"🆕 Cadastrado: {n}"); st.cache_data.clear(); st.rerun()
+        sel = st.radio("O que deseja cadastrar?", ["Remédio", "Consulta"], horizontal=True, key="cad_selector")
+        with st.form("form_novo_registro", clear_on_submit=True):
+            if sel == "Remédio":
+                n = st.text_input("Nome do Medicamento")
+                q = st.number_input("Quantidade Total (Comprimidos)", 0.0, step=0.5)
+                d = st.number_input("Dose Diária (Ex: 1.5)", 0.0, step=0.5)
+                p = st.number_input("Preço da Embalagem R$", 0.0)
+                if st.form_submit_button("Confirmar Cadastro de Remédio"):
+                    if n and q > 0:
+                        requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome": n, "qtd_total": float(q), "dose_diaria": float(d), "preco": float(p), "data_inicio": str(datetime.now().date())})
+                        enviar_telegram(f"🆕 Novo remédio: {n}")
+                        st.success("Remédio cadastrado!"); st.cache_data.clear(); st.rerun()
             else:
-                m, v, dt = st.text_input("Médico"), st.number_input("Valor"), st.date_input("Data")
-                if st.form_submit_button("Salvar"):
-                    requests.post(f"{URL_BASE}consultas", headers=HEADERS, json={"medico":m, "valor":v, "data_consulta":str(dt)})
-                    st.cache_data.clear(); st.rerun()
+                m = st.text_input("Médico / Clínica")
+                v = st.number_input("Valor da Consulta R$", 0.0)
+                dt = st.date_input("Data da Consulta")
+                if st.form_submit_button("Confirmar Cadastro de Consulta"):
+                    if m:
+                        requests.post(f"{URL_BASE}consultas", headers=HEADERS, json={"medico": m, "valor": float(v), "data_consulta": str(dt)})
+                        st.success("Consulta cadastrada!"); st.cache_data.clear(); st.rerun()
+    else: st.warning("Acesse com a senha ADM para cadastrar.")
 
 elif aba == "Remover":
     if st.session_state.admin:
@@ -135,13 +141,10 @@ elif aba == "Remover":
         df_del = buscar_dados(tab)
         if not df_del.empty:
             col = 'nome' if tab == 'remedios' else 'medico'
-            item = st.selectbox("Escolha:", df_del[col].tolist())
-            if st.button("🗑️ Excluir permanentemente", type="primary"):
+            item = st.selectbox("Escolha o item:", df_del[col].tolist())
+            if st.button("🗑️ Remover permanentemente", type="primary"):
                 id_id = df_del[df_del[col] == item]['id'].values[0]
                 res = requests.delete(f"{URL_BASE}{tab}?id=eq.{id_id}", headers=HEADERS)
                 if res.status_code in [200, 204]:
-                    st.success(f"✅ {item} removido com sucesso! O financeiro foi atualizado.")
-                    st.cache_data.clear()
-                    # Pequena pausa para o usuário ver a mensagem antes de atualizar a tela
-                    import time; time.sleep(1)
-                    st.rerun()
+                    st.success(f"✅ {item} removido! O financeiro foi atualizado.")
+                    st.cache_data.clear(); import time; time.sleep(1); st.rerun()
