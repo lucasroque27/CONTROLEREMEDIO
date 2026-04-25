@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import requests
 import time
 
-# --- 1. CONFIGURAÇÕES E CONEXÃO ---
+# --- 1. CONFIGURAÇÕES E CONEXÃO (PILAR: ESTABILIDADE) ---
 URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
 API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
 HEADERS = {
@@ -20,7 +20,7 @@ def enviar_telegram(msg):
                       json={"chat_id": "5256921022", "text": msg, "parse_mode": "Markdown"}, timeout=5)
     except: pass
 
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=1)
 def buscar_dados(tabela):
     try:
         res = requests.get(f"{URL_BASE}{tabela}?select=*&order=id.desc", headers=HEADERS, timeout=10)
@@ -33,7 +33,7 @@ def buscar_dados(tabela):
     except: pass
     return pd.DataFrame()
 
-# --- 2. LAYOUT ---
+# --- 2. INTERFACE ---
 st.set_page_config(page_title="Gestão de Saúde", layout="centered")
 st.markdown("""
     <style>
@@ -87,25 +87,32 @@ if aba == "Estoque":
 
             if st.session_state.admin:
                 with st.expander(f"⚙️ Ajustar {r['nome']}"):
-                    c1, c2 = st.columns(2)
-                    v_add = c1.number_input("Adicionar Qtd", 0.0, 1000.0, 30.0, key=f"add_{r['id']}")
-                    v_prc = c2.number_input("Preço Atual R$", 0.0, 50000.0, float(r['preco']), key=f"prc_{r['id']}")
-                    if st.button("Salvar Ajuste", key=f"btn_{r['id']}", use_container_width=True):
-                        nova_qtd = float(est_at + v_add)
-                        dt_hoje = datetime.now().strftime('%Y-%m-%d')
+                    # Chaves únicas para não travar o Streamlit
+                    v_add = st.number_input("Adicionar Qtd", 0.0, 1000.0, 30.0, key=f"add_{r['id']}")
+                    v_prc = st.number_input("Preço Atual R$", 0.0, 50000.0, float(r['preco']), key=f"prc_{r['id']}")
+                    
+                    if st.button("Confirmar Ajuste de Estoque", key=f"btn_{r['id']}", use_container_width=True):
+                        # CÁLCULO PRECISO PARA SUPABASE
+                        nova_qtd_total = float(est_at + v_add)
+                        dt_iso = datetime.now().strftime('%Y-%m-%d')
                         
-                        # Correção Erro 400: PATCH com tipos convertidos
-                        res_p = requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, 
-                                               json={"qtd_total": nova_qtd, "data_inicio": dt_hoje, "preco": float(v_prc)})
+                        # Payload limpo para evitar Erro 400
+                        dados_update = {
+                            "qtd_total": nova_qtd_total, 
+                            "data_inicio": dt_iso, 
+                            "preco": float(v_prc)
+                        }
                         
-                        requests.post(f"{URL_BASE}compras", headers=HEADERS, 
-                                      json={"nome_remedio": r['nome'], "valor": float(v_prc), "data_compra": dt_hoje})
+                        res_p = requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json=dados_update)
                         
                         if res_p.status_code in [200, 201, 204]:
-                            st.success("✅ Estoque Atualizado!")
-                            st.cache_data.clear(); time.sleep(1); st.rerun()
+                            requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(v_prc), "data_compra": dt_iso})
+                            st.success("✅ Estoque e Preço atualizados!")
+                            st.cache_data.clear()
+                            time.sleep(1)
+                            st.rerun()
                         else:
-                            st.error(f"Erro 400: Verifique os dados. Status: {res_p.status_code}")
+                            st.error(f"Erro no banco ({res_p.status_code}). Tente novamente.")
 
 elif aba == "Financeiro":
     st.subheader("💰 Gastos Atuais")
@@ -124,6 +131,7 @@ elif aba == "Financeiro":
         df_f = pd.concat(f_gastos)
         df_f['Mês'] = df_f['Data'].dt.strftime('%m/%Y')
         st.bar_chart(df_f.groupby(['Mês', 'Tipo'])['valor'].sum().reset_index(), x="Mês", y="valor", color="Tipo")
+        # PILAR: FINANCEIRO DINÂMICO
         st.metric("Total Investido (Itens Ativos)", f"R$ {df_f['valor'].sum():,.2f}")
 
 elif aba == "Consultas":
@@ -135,34 +143,50 @@ elif aba == "Consultas":
 
 elif aba == "Cadastrar":
     if st.session_state.admin:
-        tipo = st.radio("Selecione:", ["Medicamento", "Consulta"], horizontal=True)
-        dt_hoje = datetime.now().strftime('%Y-%m-%d')
+        tipo = st.radio("O que você vai cadastrar?", ["Medicamento", "Consulta"], horizontal=True)
+        dt_iso = datetime.now().strftime('%Y-%m-%d')
         
-        with st.form("main_form", clear_on_submit=True):
+        with st.form("form_cadastro_geral", clear_on_submit=True):
             if tipo == "Medicamento":
-                f_nome = st.text_input("Nome")
-                f_qtd = st.number_input("Qtd Inicial", 0.0, step=0.5)
-                f_dose = st.number_input("Dose/Dia", 0.0, step=0.5)
-                f_preco = st.number_input("Preço", 0.0)
-                if st.form_submit_button("FINALIZAR CADASTRO"):
+                f_nome = st.text_input("Nome do Remédio")
+                f_qtd = st.number_input("Quantidade Inicial (Total)", 0.0, step=0.5)
+                f_dose = st.number_input("Dose Diária (Ex: 1.5)", 0.0, step=0.5)
+                f_preco = st.number_input("Preço de Custo R$", 0.0)
+                
+                if st.form_submit_button("SALVAR MEDICAMENTO"):
                     if f_nome and f_qtd > 0:
-                        pay = {"nome": f_nome, "qtd_total": float(f_qtd), "dose_diaria": float(f_dose), "preco": float(f_preco), "data_inicio": dt_hoje}
-                        r = requests.post(f"{URL_BASE}remedios", headers=HEADERS, json=pay)
+                        payload = {
+                            "nome": f_nome, 
+                            "qtd_total": float(f_qtd), 
+                            "dose_diaria": float(f_dose), 
+                            "preco": float(f_preco), 
+                            "data_inicio": dt_iso
+                        }
+                        r = requests.post(f"{URL_BASE}remedios", headers=HEADERS, json=payload)
                         if r.status_code in [200, 201, 204]:
-                            st.success(f"✅ {f_nome} salvo!"); enviar_telegram(f"🆕 Remédio: {f_nome}")
+                            st.success(f"✅ {f_nome} cadastrado!")
+                            enviar_telegram(f"🆕 Remédio Cadastrado: {f_nome}")
                             st.cache_data.clear(); time.sleep(1); st.rerun()
-                        else: st.error(f"Erro 400 ao cadastrar. Status: {r.status_code}")
+                        else:
+                            st.error(f"Erro ao salvar remédio. Tente simplificar o nome.")
             else:
-                f_med = st.text_input("Médico")
-                f_vlr = st.number_input("Valor", 0.0)
-                f_dat = st.date_input("Data")
-                if st.form_submit_button("FINALIZAR CADASTRO"):
+                f_med = st.text_input("Médico / Clínica")
+                f_vlr = st.number_input("Valor R$", 0.0)
+                f_dat = st.date_input("Data da Consulta")
+                
+                if st.form_submit_button("SALVAR CONSULTA"):
                     if f_med:
-                        pay = {"medico": f_med, "valor": float(f_vlr), "data_consulta": f_dat.strftime('%Y-%m-%d')}
-                        r = requests.post(f"{URL_BASE}consultas", headers=HEADERS, json=pay)
+                        payload = {
+                            "medico": f_med, 
+                            "valor": float(f_vlr), 
+                            "data_consulta": f_dat.strftime('%Y-%m-%d')
+                        }
+                        r = requests.post(f"{URL_BASE}consultas", headers=HEADERS, json=payload)
                         if r.status_code in [200, 201, 204]:
-                            st.success("✅ Consulta salva!"); st.cache_data.clear(); time.sleep(1); st.rerun()
-                        else: st.error(f"Erro 400 ao cadastrar consulta. Status: {r.status_code}")
+                            st.success("✅ Consulta salva com sucesso!")
+                            st.cache_data.clear(); time.sleep(1); st.rerun()
+                        else:
+                            st.error("Erro ao salvar consulta.")
 
 elif aba == "Remover":
     if st.session_state.admin:
@@ -170,9 +194,10 @@ elif aba == "Remover":
         df_rem = buscar_dados(tab_rem)
         if not df_rem.empty:
             col_name = 'nome' if tab_rem == 'remedios' else 'medico'
-            item_rem = st.selectbox("Qual item?", df_rem[col_name].tolist())
-            if st.button("🗑️ CONFIRMAR EXCLUSÃO", type="primary", use_container_width=True):
+            item_rem = st.selectbox("Qual item remover?", df_rem[col_name].tolist())
+            if st.button("🗑️ EXCLUIR DEFINITIVAMENTE", type="primary", use_container_width=True):
                 id_rem = df_rem[df_rem[col_name] == item_rem]['id'].values[0]
                 r = requests.delete(f"{URL_BASE}{tab_rem}?id=eq.{id_rem}", headers=HEADERS)
                 if r.status_code in [200, 204]:
-                    st.success("✅ Excluído!"); st.cache_data.clear(); time.sleep(1); st.rerun()
+                    st.success("✅ Removido! O financeiro foi atualizado.")
+                    st.cache_data.clear(); time.sleep(1); st.rerun()
