@@ -4,7 +4,7 @@ import requests
 from datetime import datetime, timedelta
 import time
 
-# --- 1. CONFIGURAÇÃO DE CONEXÃO ---
+# --- 1. CONFIGURAÇÃO DE CONEXÃO E TELEGRAM ---
 URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
 API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
 HEADERS = {
@@ -13,6 +13,14 @@ HEADERS = {
     "Content-Type": "application/json",
     "Prefer": "return=minimal"
 }
+
+def enviar_telegram(msg):
+    try:
+        # Seu Bot e Chat ID configurados
+        requests.post(f"https://api.telegram.org/bot8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM/sendMessage", 
+                      json={"chat_id": "5256921022", "text": msg}, timeout=5)
+    except:
+        pass
 
 @st.cache_data(ttl=1)
 def buscar_dados(tabela):
@@ -56,7 +64,6 @@ if aba == "Estoque":
     else:
         hoje = datetime.now()
         for _, r in df.iterrows():
-            # Pilar: Doses fracionadas e cálculo de tempo
             data_ini = pd.to_datetime(r['data_inicio'])
             dias_corridos = (hoje - data_ini).days
             qtd_atual = max(0.0, float(r['qtd_total']) - (dias_corridos * float(r['dose_diaria'])))
@@ -73,22 +80,20 @@ if aba == "Estoque":
                     v_prc = st.number_input("Novo Preço R$", 0.0, value=float(r['preco']), key=f"p_{r['id']}")
                     if st.button("Salvar Ajuste", key=f"b_{r['id']}"):
                         pay = {"qtd_total": float(qtd_atual + v_add), "data_inicio": hoje.strftime('%Y-%m-%d'), "preco": float(v_prc)}
-                        requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json=pay)
-                        st.cache_data.clear(); time.sleep(0.5); st.rerun()
+                        res = requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json=pay)
+                        if res.status_code in [200, 204]:
+                            enviar_telegram(f"✅ Estoque atualizado: {r['nome']} (+{v_add} unidades)")
+                            st.cache_data.clear(); time.sleep(0.5); st.rerun()
 
 elif aba == "Financeiro":
     st.subheader("💰 Resumo de Gastos")
     df_r = buscar_dados("remedios")
     df_c = buscar_dados("consultas")
-    
-    # Removido o gráfico e mantido apenas as métricas de gastos
     tot_r = df_r['preco'].sum() if not df_r.empty else 0
     tot_c = df_c['valor'].sum() if not df_c.empty else 0
-    
     col1, col2 = st.columns(2)
     col1.metric("Total em Remédios", f"R$ {tot_r:,.2f}")
     col2.metric("Total em Consultas", f"R$ {tot_c:,.2f}")
-    
     st.divider()
     st.metric("INVESTIMENTO TOTAL", f"R$ {tot_r + tot_c:,.2f}")
 
@@ -108,8 +113,10 @@ elif aba == "Cadastrar":
                 n, q, d, p = st.text_input("Nome"), st.number_input("Qtd"), st.number_input("Dose/Dia"), st.number_input("Preço")
                 if st.form_submit_button("SALVAR"):
                     pay = {"nome": n, "qtd_total": float(q), "dose_diaria": float(d), "preco": float(p), "data_inicio": datetime.now().strftime('%Y-%m-%d')}
-                    requests.post(f"{URL_BASE}remedios", headers=HEADERS, json=pay)
-                    st.cache_data.clear(); time.sleep(0.5); st.rerun()
+                    r = requests.post(f"{URL_BASE}remedios", headers=HEADERS, json=pay)
+                    if r.status_code in [200, 201]:
+                        enviar_telegram(f"🆕 Novo Remédio Cadastrado: {n}")
+                        st.cache_data.clear(); time.sleep(0.5); st.rerun()
             else:
                 m, v = st.text_input("Médico"), st.number_input("Valor")
                 if st.form_submit_button("SALVAR"):
