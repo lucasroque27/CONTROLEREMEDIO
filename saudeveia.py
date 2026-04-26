@@ -29,11 +29,11 @@ def buscar_dados(tabela):
     except: return pd.DataFrame()
 
 # --- 2. INTERFACE ---
-st.set_page_config(page_title="Gestão de Saúde - Completo", layout="centered")
+st.set_page_config(page_title="Saúde Rock - Gestão Real", layout="centered")
 if "autenticado" not in st.session_state: st.session_state.autenticado = False
 
 with st.sidebar:
-    st.title("🛡️ Painel de Controle")
+    st.title("🛡️ Sistema")
     if not st.session_state.autenticado:
         senha = st.text_input("Senha ADM", type="password")
         if st.button("Acessar") or senha == "1234":
@@ -53,14 +53,12 @@ if aba == "Estoque":
     if not df.empty:
         hoje = datetime.now()
         for _, r in df.iterrows():
-            # Cálculo matemático do estoque e data de término
             ini = pd.to_datetime(r['data_inicio'])
             passados = (hoje - ini).days
             dose = float(r['dose_diaria'])
+            # Cálculo do Estoque: Estoque = Total - (Dias x Dose)
             atual = max(0.0, float(r['qtd_total']) - (passados * dose))
             resta_dias = float(atual / dose) if dose > 0 else 0
-            
-            # DETERMINAÇÃO DA DATA EXATA DE TÉRMINO
             data_fim = hoje + timedelta(days=resta_dias)
             
             with st.container(border=True):
@@ -70,26 +68,22 @@ if aba == "Estoque":
                 c2.metric("Dose Diária", f"{dose:g}")
                 c3.metric("Dias Restantes", int(resta_dias))
                 
-                # EXIBIÇÃO DA FUNCIONALIDADE RESTAURADA
                 if atual > 0:
                     st.warning(f"📅 **Previsão de Término: {data_fim.strftime('%d/%m/%Y')}**")
                 else:
                     st.error("🚨 **ESTOQUE ZERADO**")
                 
                 if st.session_state.autenticado:
-                    with st.expander("Ajustar Estoque (Nova Compra)"):
+                    with st.expander("Ajustar Estoque / Registrar Compra"):
                         v_add = st.number_input("Quantidade Comprada", 0.0, key=f"add_{r['id']}")
                         v_pago = st.number_input("Valor da Compra (R$)", 0.0, key=f"v_{r['id']}")
-                        if st.button("Confirmar e Salvar Gasto", key=f"btn_{r['id']}", use_container_width=True):
-                            # Atualiza a tabela de remédios (resetando a data de início para hoje)
+                        if st.button("Salvar Ajuste", key=f"btn_{r['id']}", use_container_width=True):
                             requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, 
                                            json={"qtd_total": float(atual + v_add), "data_inicio": hoje.strftime('%Y-%m-%d')})
-                            # Registra o gasto na tabela de compras para o financeiro somar
                             requests.post(f"{URL_BASE}compras", headers=HEADERS, 
                                            json={"nome_remedio": r['nome'], "valor": float(v_pago), "data_compra": hoje.strftime('%Y-%m-%d')})
-                            
                             enviar_telegram(f"✅ Compra: {r['nome']} (+{v_add} un) | R$ {v_pago:.2f}")
-                            st.success("Estoque e Gasto registrados com sucesso!"); st.cache_data.clear(); time.sleep(1.5); st.rerun()
+                            st.success("Estoque e Gasto registrados!"); st.cache_data.clear(); time.sleep(1.5); st.rerun()
 
 elif aba == "Financeiro":
     st.subheader("💰 Controle de Gastos com Filtros")
@@ -119,7 +113,7 @@ elif aba == "Financeiro":
         if st.button("📥 Gerar Planilha para Excel (CSV)"):
             relatorio = pd.concat([df_com, df_con], sort=False)
             csv = relatorio.to_csv(index=False).encode('utf-8')
-            st.download_button(label="Baixar Relatório de Gastos", data=csv, file_name=f"relatorio_saude_{ano_sel}_{mes_sel}.csv", mime="text/csv")
+            st.download_button(label="Baixar Relatório", data=csv, file_name=f"relatorio_saude_{ano_sel}_{mes_sel}.csv", mime="text/csv")
 
 elif aba == "Consultas":
     st.subheader("🩺 Histórico de Consultas")
@@ -146,12 +140,32 @@ elif aba == "Cadastrar":
 
 elif aba == "Remover":
     if st.session_state.autenticado:
-        tab = st.selectbox("Tabela:", ["remedios", "consultas", "compras"])
+        tab = st.selectbox("Onde deseja apagar?", ["remedios", "consultas", "compras"])
         df_del = buscar_dados(tab)
         if not df_del.empty:
-            c = 'nome' if tab == 'remedios' else ('nome_remedio' if tab == 'compras' else 'medico')
-            it = st.selectbox("Selecione o item:", df_del[c].tolist())
-            if st.button("🗑️ EXCLUIR DEFINITIVAMENTE"):
-                id_i = df_del[df_del[c] == it]['id'].values[0]
-                requests.delete(f"{URL_BASE}{tab}?id=eq.{id_i}", headers=HEADERS)
-                st.cache_data.clear(); time.sleep(1); st.rerun()
+            # Define o campo de nome baseado na tabela
+            campo = 'nome' if tab == 'remedios' else ('nome_remedio' if tab == 'compras' else 'medico')
+            it_selecionado = st.selectbox("Selecione o item para apagar:", df_del[campo].tolist())
+            
+            if st.button("🗑️ EXCLUIR DEFINITIVAMENTE", type="primary"):
+                # Busca o ID do item
+                id_item = df_del[df_del[campo] == it_selecionado]['id'].values[0]
+                
+                # SE FOR REMÉDIO, APAGA TAMBÉM O HISTÓRICO FINANCEIRO (COMPRAS)
+                if tab == "remedios":
+                    nome_rem = it_selecionado
+                    # Deleta o remédio do estoque
+                    requests.delete(f"{URL_BASE}remedios?id=eq.{id_item}", headers=HEADERS)
+                    # Deleta todos os gastos vinculados a esse nome na tabela de compras
+                    requests.delete(f"{URL_BASE}compras?nome_remedio=eq.{nome_rem}", headers=HEADERS)
+                    st.warning(f"O remédio '{nome_rem}' e todos os seus gastos foram apagados.")
+                else:
+                    # Deleta apenas o registro específico de consulta ou compra individual
+                    requests.delete(f"{URL_BASE}{tab}?id=eq.{id_item}", headers=HEADERS)
+                    st.warning("Registro excluído.")
+                
+                st.cache_data.clear()
+                time.sleep(1.5)
+                st.rerun()
+    else:
+        st.info("Acesse com a senha para remover dados.")
