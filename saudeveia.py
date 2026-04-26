@@ -3,8 +3,9 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import time
+import io
 
-# --- 1. CONFIGURAÇÕES (SUPABASE E TELEGRAM) ---
+# --- 1. CONFIGURAÇÕES ---
 URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
 API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
 HEADERS = {
@@ -27,12 +28,12 @@ def buscar_dados(tabela):
         return pd.DataFrame(res.json()) if res.status_code == 200 else pd.DataFrame()
     except: return pd.DataFrame()
 
-# --- 2. INTERFACE E SEGURANÇA ---
-st.set_page_config(page_title="Gestão de Saúde Rock", layout="centered")
+# --- 2. INTERFACE ---
+st.set_page_config(page_title="Saúde Rock - Pro", layout="centered")
 if "autenticado" not in st.session_state: st.session_state.autenticado = False
 
 with st.sidebar:
-    st.title("⚙️ Painel")
+    st.title("🛡️ Controle")
     if not st.session_state.autenticado:
         senha = st.text_input("Senha", type="password")
         if st.button("Entrar") or senha == "1234":
@@ -46,78 +47,90 @@ with st.sidebar:
 # --- 3. FUNCIONALIDADES ---
 
 if aba == "Estoque":
-    st.subheader("📋 Status Detalhado")
+    st.subheader("📋 Status do Estoque")
     df = buscar_dados("remedios")
     if not df.empty:
         hoje = datetime.now()
         for _, r in df.iterrows():
-            # PILAR: Cálculo com doses fracionadas
             ini = pd.to_datetime(r['data_inicio'])
-            dias_passados = (hoje - ini).days
+            passados = (hoje - ini).days
             dose = float(r['dose_diaria'])
-            estoque_atual = max(0.0, float(r['qtd_total']) - (dias_passados * dose))
-            resta_dias = float(estoque_atual / dose) if dose > 0 else 0
-            data_fim = hoje + timedelta(days=resta_dias)
+            # Pilar: Dose 1.5 e cálculo preciso
+            atual = max(0.0, float(r['qtd_total']) - (passados * dose))
+            resta = float(atual / dose) if dose > 0 else 0
             
             with st.container(border=True):
                 st.markdown(f"### 💊 {r['nome'].upper()}")
                 c1, c2, c3 = st.columns(3)
-                
-                # RECOLOCANDO AS INFORMAÇÕES QUE VOCÊ PEDIU
-                c1.metric("Estoque Atual", f"{estoque_atual:g}")
-                c2.metric("Dose Diária", f"{dose:g}")
-                c3.metric("Dias Restantes", int(resta_dias))
-                
-                st.info(f"📅 Previsão de Término: **{data_fim.strftime('%d/%m/%Y')}**")
+                c1.metric("Em mãos", f"{atual:g}")
+                c2.metric("Dose/Dia", f"{dose:g}")
+                c3.metric("Dias Resta", int(resta))
                 
                 if st.session_state.autenticado:
-                    with st.expander("➕ Ajustar Estoque / Registrar Compra"):
+                    with st.expander("Ajustar / Comprar"):
                         v_add = st.number_input("Qtd Adquirida", 0.0, key=f"add_{r['id']}")
-                        v_pago = st.number_input("Valor Pago nesta Compra (R$)", 0.0, key=f"v_{r['id']}")
+                        v_pago = st.number_input("Preço da Compra R$", 0.0, key=f"v_{r['id']}")
                         if st.button("Salvar Ajuste", key=f"btn_{r['id']}", use_container_width=True):
-                            # Atualiza estoque e reseta data
                             requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, 
-                                           json={"qtd_total": float(estoque_atual + v_add), "data_inicio": hoje.strftime('%Y-%m-%d')})
-                            # Registra novo gasto no financeiro
+                                           json={"qtd_total": float(atual + v_add), "data_inicio": hoje.strftime('%Y-%m-%d')})
                             requests.post(f"{URL_BASE}compras", headers=HEADERS, 
                                            json={"nome_remedio": r['nome'], "valor": float(v_pago), "data_compra": hoje.strftime('%Y-%m-%d')})
-                            
-                            enviar_telegram(f"✅ Ajuste: {r['nome']} (+{v_add} un) | Gasto: R$ {v_pago:.2f}")
-                            st.success("Estoque e Financeiro atualizados!")
-                            st.cache_data.clear(); time.sleep(1.5); st.rerun()
+                            enviar_telegram(f"✅ Compra: {r['nome']} (+{v_add} un) | R$ {v_pago:.2f}")
+                            st.success("Estoque e Financeiro atualizados!"); st.cache_data.clear(); time.sleep(1.5); st.rerun()
 
 elif aba == "Financeiro":
-    st.subheader("💰 Resumo de Investimento")
+    st.subheader("💰 Controle de Gastos Mensal/Anual")
     df_com = buscar_dados("compras")
     df_con = buscar_dados("consultas")
     
-    # PILAR: Soma dinâmica de todos os gastos registrados
-    total_r = df_com['valor'].sum() if not df_com.empty else 0
-    total_c = df_con['valor'].sum() if not df_con.empty else 0
-    
-    col1, col2 = st.columns(2)
-    col1.metric("Total em Remédios", f"R$ {total_r:,.2f}")
-    col2.metric("Total em Consultas", f"R$ {total_c:,.2f}")
-    
-    st.divider()
-    st.markdown(f"## TOTAL GERAL: R$ {total_r + total_c:,.2f}")
+    if not df_com.empty or not df_con.empty:
+        # Preparar datas para filtro
+        if not df_com.empty: df_com['data'] = pd.to_datetime(df_com['data_compra'])
+        if not df_con.empty: df_con['data'] = pd.to_datetime(df_con['data_consulta'])
+        
+        # Filtros de interface
+        c1, c2 = st.columns(2)
+        ano_sel = c1.selectbox("Ano", [2024, 2025, 2026], index=2)
+        mes_sel = c2.selectbox("Mês", list(range(1, 13)), index=datetime.now().month - 1)
+        
+        # Lógica de Filtro
+        f_com = df_com[(df_com['data'].dt.year == ano_sel) & (df_com['data'].dt.month == mes_sel)] if not df_com.empty else pd.DataFrame()
+        f_con = df_con[(df_con['data'].dt.year == ano_sel) & (df_con['data'].dt.month == mes_sel)] if not df_con.empty else pd.DataFrame()
+        
+        tot_r = f_com['valor'].sum() if not f_com.empty else 0
+        tot_c = f_con['valor'].sum() if not f_con.empty else 0
+        
+        st.divider()
+        st.markdown(f"#### Gastos em {mes_sel}/{ano_sel}:")
+        col1, col2 = st.columns(2)
+        col1.metric("Medicamentos", f"R$ {tot_r:,.2f}")
+        col2.metric("Consultas", f"R$ {tot_c:,.2f}")
+        st.metric("TOTAL NO MÊS", f"R$ {tot_r + tot_c:,.2f}")
+        
+        st.divider()
+        # BOTÃO DE EXPORTAR (Pilar: Controle de dados)
+        if st.button("📥 Exportar Relatório Completo (CSV)"):
+            # Une tudo para exportar
+            relatorio = pd.concat([df_com, df_con], sort=False)
+            csv = relatorio.to_csv(index=False).encode('utf-8')
+            st.download_button(label="Clique para baixar planilha", data=csv, file_name=f"saude_rock_{ano_sel}_{mes_sel}.csv", mime="text/csv")
 
 elif aba == "Consultas":
-    st.subheader("🩺 Histórico Médico")
+    st.subheader("🩺 Histórico de Consultas")
     df = buscar_dados("consultas")
     if not df.empty:
         st.dataframe(df[['data_consulta', 'medico', 'valor']], hide_index=True, use_container_width=True)
 
 elif aba == "Cadastrar":
     if st.session_state.autenticado:
-        opcao = st.selectbox("O que deseja cadastrar?", ["Remédio", "Consulta"])
+        opcao = st.selectbox("Tipo:", ["Remédio", "Consulta"])
         with st.form("f_cad"):
             if opcao == "Remédio":
-                n, q, d, p = st.text_input("Nome"), st.number_input("Quantidade Total"), st.number_input("Dose Diária"), st.number_input("Preço de Compra (R$)")
+                n, q, d, p = st.text_input("Nome"), st.number_input("Quantidade"), st.number_input("Dose Diária"), st.number_input("Preço")
                 if st.form_submit_button("SALVAR"):
                     requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome": n, "qtd_total": float(q), "dose_diaria": float(d), "data_inicio": datetime.now().strftime('%Y-%m-%d')})
                     requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio": n, "valor": float(p), "data_compra": datetime.now().strftime('%Y-%m-%d')})
-                    enviar_telegram(f"🆕 Novo Remédio: {n} (Dose {d})")
+                    enviar_telegram(f"🆕 Novo Cadastro: {n}")
                     st.success("Salvo!"); st.cache_data.clear(); time.sleep(1); st.rerun()
             else:
                 m, v = st.text_input("Médico"), st.number_input("Valor")
