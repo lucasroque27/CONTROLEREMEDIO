@@ -77,7 +77,7 @@ if "autenticado" not in st.session_state:
 
 # --- 3. SIDEBAR ---
 with st.sidebar:
-    st.title("🛡️ Controle")
+    st.title("🛡️ RÉMEDIOS DA VEIA")
     if not st.session_state.autenticado:
         senha = st.text_input("Senha ADM", type="password")
         if st.button("Entrar") or (senha == "1234"):
@@ -95,7 +95,7 @@ with st.sidebar:
 # --- 4. TELAS ---
 
 if aba == "Estoque":
-    st.subheader("📋 Status do Estoque")
+    st.subheader("📋 MEDICAMENTOS CONTROLE")
     df = buscar_dados("remedios")
     if not df.empty:
         hoje = datetime.now()
