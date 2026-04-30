@@ -28,41 +28,22 @@ def buscar_dados(tabela):
         return pd.DataFrame(res.json()) if res.status_code == 200 else pd.DataFrame()
     except: return pd.DataFrame()
 
-# --- 2. INTERFACE E CSS RESPONSIVO ---
-st.set_page_config(page_title="Saúde Rock - Gestão Real", layout="centered")
+# --- 2. INTERFACE E AJUSTES DE TELA ---
+st.set_page_config(page_title="Saúde Rock", layout="centered")
 
-# CSS Inteligente: Empilha no mobile e lado a lado no Desktop
+# CSS para evitar cortes e ajustar fontes
 st.markdown("""
     <style>
-    .block-container { padding: 1rem; }
+    /* Resolve o problema de cortar o topo */
+    .stApp { margin-top: -50px; }
+    .block-container { padding-top: 2rem !important; }
+    
+    /* Botões ocupando a largura toda para facilitar o toque */
     .stButton button { width: 100%; }
     
-    /* Container Flexível que se ajusta automaticamente */
-    .flex-container {
-        display: flex;
-        flex-wrap: wrap; /* Permite quebrar a linha se não couber */
-        gap: 10px;
-        justify-content: space-between;
-        align-items: center;
-        padding: 10px 0;
-        border-top: 1px solid rgba(128,128,128,0.2);
-        border-bottom: 1px solid rgba(128,128,128,0.2);
-        margin-bottom: 10px;
-    }
-    
-    .flex-item {
-        flex: 1 1 150px; /* Tenta manter 150px, mas cresce se houver espaço */
-        text-align: center;
-        padding: 5px;
-    }
-
-    @media (max-width: 600px) {
-        .flex-item {
-            flex: 1 1 100%; /* No celular, cada item ocupa 100% da largura */
-            border: none !important;
-            border-bottom: 1px solid rgba(128,128,128,0.1) !important;
-        }
-    }
+    /* Ajuste fino para métricas não ficarem gigantes no celular */
+    [data-testid="stMetricValue"] { font-size: 1.4rem !important; }
+    [data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -75,7 +56,7 @@ with st.sidebar:
         if st.button("Acessar") or senha == "1234":
             if senha == "1234": st.session_state.autenticado = True; st.rerun()
     else:
-        if st.button("Sair do Modo ADM", use_container_width=True):
+        if st.button("Sair do Modo ADM"):
             st.session_state.autenticado = False; st.rerun()
     
     st.divider()
@@ -99,26 +80,14 @@ if aba == "Estoque":
             with st.container(border=True):
                 st.markdown(f"**💊 {r['nome'].upper()}**")
                 
-                # Layout de métricas que não corta texto
-                st.markdown(f"""
-                <div class="flex-container">
-                    <div class="flex-item">
-                        <div style="font-size: 0.8rem; opacity: 0.8;">Estoque</div>
-                        <div style="font-size: 1.1rem; font-weight: bold;">{atual:g}</div>
-                    </div>
-                    <div class="flex-item" style="border-left: 1px solid rgba(128,128,128,0.2); border-right: 1px solid rgba(128,128,128,0.2);">
-                        <div style="font-size: 0.8rem; opacity: 0.8;">Dose/Dia</div>
-                        <div style="font-size: 1.1rem; font-weight: bold;">{dose:g}</div>
-                    </div>
-                    <div class="flex-item">
-                        <div style="font-size: 0.8rem; opacity: 0.8;">Dias Rest.</div>
-                        <div style="font-size: 1.1rem; font-weight: bold;">{int(resta_dias)}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                # Usando colunas nativas (mais estável)
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Estoque", f"{atual:g}")
+                c2.metric("Dose", f"{dose:g}")
+                c3.metric("Dias", int(resta_dias))
                 
                 if atual > 0:
-                    st.warning(f"Fim previsto: {data_fim.strftime('%d/%m/%Y')}")
+                    st.info(f"📅 Término: {data_fim.strftime('%d/%m/%Y')}")
                 else:
                     st.error("🚨 ESTOQUE ZERADO")
                 
@@ -126,13 +95,13 @@ if aba == "Estoque":
                     with st.expander("Ajustar / Comprar"):
                         v_add = st.number_input("Qtd Comprada", 0.0, key=f"add_{r['id']}")
                         v_pago = st.number_input("Valor R$", 0.0, key=f"v_{r['id']}")
-                        if st.button("Salvar Ajuste", key=f"btn_{r['id']}", use_container_width=True):
+                        if st.button("Salvar Ajuste", key=f"btn_{r['id']}"):
                             requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, 
                                            json={"qtd_total": float(atual + v_add), "data_inicio": hoje.strftime('%Y-%m-%d')})
                             requests.post(f"{URL_BASE}compras", headers=HEADERS, 
                                            json={"nome_remedio": r['nome'], "valor": float(v_pago), "data_compra": hoje.strftime('%Y-%m-%d')})
                             enviar_telegram(f"✅ Compra: {r['nome']} (+{v_add} un) | R$ {v_pago:.2f}")
-                            st.success("Registrado!"); st.cache_data.clear(); time.sleep(1.5); st.rerun()
+                            st.success("Salvo!"); st.cache_data.clear(); time.sleep(1.5); st.rerun()
 
 elif aba == "Financeiro":
     st.subheader("💰 Gastos Mensais")
@@ -152,28 +121,19 @@ elif aba == "Financeiro":
         
         tr, tc = f_com['valor'].sum() if not f_com.empty else 0, f_con['valor'].sum() if not f_con.empty else 0
         
-        # Painel Financeiro que quebra linha no celular
-        st.markdown(f"""
-        <div class="flex-container">
-            <div class="flex-item">
-                <div style="font-size: 0.9rem; opacity: 0.8;">💊 Remédios</div>
-                <div style="font-size: 1.2rem; font-weight: bold;">R$ {tr:,.2f}</div>
-            </div>
-            <div class="flex-item" style="border-left: 1px solid rgba(128,128,128,0.2);">
-                <div style="font-size: 0.9rem; opacity: 0.8;">🩺 Consultas</div>
-                <div style="font-size: 1.2rem; font-weight: bold;">R$ {tc:,.2f}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
+        # Layout financeiro limpo
         with st.container(border=True):
-            st.write("**INVESTIMENTO TOTAL**")
-            st.title(f"R$ {tr + tc:,.2f}")
+            col_a, col_b = st.columns(2)
+            col_a.metric("💊 Remédios", f"R$ {tr:,.2f}")
+            col_b.metric("🩺 Consultas", f"R$ {tc:,.2f}")
+            st.divider()
+            st.write("**TOTAL INVESTIDO**")
+            st.subheader(f"R$ {tr + tc:,.2f}")
         
-        if st.button("📥 Gerar Planilha CSV", use_container_width=True):
+        if st.button("📥 Gerar Planilha CSV"):
             relatorio = pd.concat([df_com, df_con], sort=False)
             csv = relatorio.to_csv(index=False).encode('utf-8')
-            st.download_button(label="Baixar Relatório", data=csv, file_name=f"relatorio_saude_{ano_sel}_{mes_sel}.csv", mime="text/csv", use_container_width=True)
+            st.download_button(label="Baixar Relatório", data=csv, file_name=f"financeiro_{ano_sel}_{mes_sel}.csv", mime="text/csv")
 
 elif aba == "Consultas":
     st.subheader("🩺 Histórico")
@@ -190,37 +150,30 @@ elif aba == "Cadastrar":
                 q = st.number_input("Qtd Inicial")
                 d = st.number_input("Dose/Dia")
                 p = st.number_input("Preço Inicial")
-                if st.form_submit_button("SALVAR REMÉDIO", use_container_width=True):
+                if st.form_submit_button("SALVAR"):
                     requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome": n, "qtd_total": float(q), "dose_diaria": float(d), "data_inicio": datetime.now().strftime('%Y-%m-%d')})
                     requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio": n, "valor": float(p), "data_compra": datetime.now().strftime('%Y-%m-%d')})
                     enviar_telegram(f"🆕 Cadastrado: {n}")
-                    st.success("Salvo!"); st.cache_data.clear(); time.sleep(1); st.rerun()
+                    st.success("Sucesso!"); st.cache_data.clear(); time.sleep(1); st.rerun()
             else:
                 m = st.text_input("Médico")
                 v = st.number_input("Valor")
-                if st.form_submit_button("SALVAR CONSULTA", use_container_width=True):
+                if st.form_submit_button("SALVAR"):
                     requests.post(f"{URL_BASE}consultas", headers=HEADERS, json={"medico": m, "valor": float(v), "data_consulta": datetime.now().strftime('%Y-%m-%d')})
-                    st.success("Salvo!"); st.cache_data.clear(); time.sleep(1); st.rerun()
+                    st.success("Sucesso!"); st.cache_data.clear(); time.sleep(1); st.rerun()
 
 elif aba == "Remover":
     if st.session_state.autenticado:
-        tab = st.selectbox("Onde deseja apagar?", ["remedios", "consultas", "compras"])
+        tab = st.selectbox("Tabela", ["remedios", "consultas", "compras"])
         df_del = buscar_dados(tab)
         if not df_del.empty:
             campo = 'nome' if tab == 'remedios' else ('nome_remedio' if tab == 'compras' else 'medico')
-            it_selecionado = st.selectbox("Selecione o item:", df_del[campo].tolist())
-            
-            if st.button("🗑️ EXCLUIR DEFINITIVAMENTE", type="primary", use_container_width=True):
-                id_item = df_del[df_del[campo] == it_selecionado]['id'].values[0]
-                
+            it = st.selectbox("Item:", df_del[campo].tolist())
+            if st.button("🗑️ EXCLUIR", type="primary"):
+                id_item = df_del[df_del[campo] == it]['id'].values[0]
                 if tab == "remedios":
-                    nome_rem = it_selecionado
                     requests.delete(f"{URL_BASE}remedios?id=eq.{id_item}", headers=HEADERS)
-                    requests.delete(f"{URL_BASE}compras?nome_remedio=eq.{nome_rem}", headers=HEADERS)
+                    requests.delete(f"{URL_BASE}compras?nome_remedio=eq.{it}", headers=HEADERS)
                 else:
                     requests.delete(f"{URL_BASE}{tab}?id=eq.{id_item}", headers=HEADERS)
-                
-                st.cache_data.clear()
-                st.rerun()
-    else:
-        st.info("Acesse com a senha para remover dados.")
+                st.cache_data.clear(); st.rerun()
