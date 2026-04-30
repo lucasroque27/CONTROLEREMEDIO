@@ -28,15 +28,41 @@ def buscar_dados(tabela):
         return pd.DataFrame(res.json()) if res.status_code == 200 else pd.DataFrame()
     except: return pd.DataFrame()
 
-# --- 2. INTERFACE E CSS SEGURO ---
+# --- 2. INTERFACE E CSS RESPONSIVO ---
 st.set_page_config(page_title="Saúde Rock - Gestão Real", layout="centered")
 
-# CSS focado apenas em aproveitar melhor o espaço, sem quebrar o layout nativo
+# CSS Inteligente: Empilha no mobile e lado a lado no Desktop
 st.markdown("""
     <style>
-    .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; padding-left: 1rem; padding-right: 1rem; }
+    .block-container { padding: 1rem; }
     .stButton button { width: 100%; }
-    .stAlert { padding: 0.5rem !important; margin-bottom: 0.5rem !important; }
+    
+    /* Container Flexível que se ajusta automaticamente */
+    .flex-container {
+        display: flex;
+        flex-wrap: wrap; /* Permite quebrar a linha se não couber */
+        gap: 10px;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 0;
+        border-top: 1px solid rgba(128,128,128,0.2);
+        border-bottom: 1px solid rgba(128,128,128,0.2);
+        margin-bottom: 10px;
+    }
+    
+    .flex-item {
+        flex: 1 1 150px; /* Tenta manter 150px, mas cresce se houver espaço */
+        text-align: center;
+        padding: 5px;
+    }
+
+    @media (max-width: 600px) {
+        .flex-item {
+            flex: 1 1 100%; /* No celular, cada item ocupa 100% da largura */
+            border: none !important;
+            border-bottom: 1px solid rgba(128,128,128,0.1) !important;
+        }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -73,24 +99,23 @@ if aba == "Estoque":
             with st.container(border=True):
                 st.markdown(f"**💊 {r['nome'].upper()}**")
                 
-                # Painel de métricas usando HTML Flexível (Perfeito para celular e PC)
-                html_metricas = f"""
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-top: 1px solid rgba(128,128,128,0.2); border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 10px;">
-                    <div style="text-align: center; width: 33%;">
+                # Layout de métricas que não corta texto
+                st.markdown(f"""
+                <div class="flex-container">
+                    <div class="flex-item">
                         <div style="font-size: 0.8rem; opacity: 0.8;">Estoque</div>
-                        <div style="font-size: 1.2rem; font-weight: bold;">{atual:g}</div>
+                        <div style="font-size: 1.1rem; font-weight: bold;">{atual:g}</div>
                     </div>
-                    <div style="text-align: center; width: 33%; border-left: 1px solid rgba(128,128,128,0.2); border-right: 1px solid rgba(128,128,128,0.2);">
+                    <div class="flex-item" style="border-left: 1px solid rgba(128,128,128,0.2); border-right: 1px solid rgba(128,128,128,0.2);">
                         <div style="font-size: 0.8rem; opacity: 0.8;">Dose/Dia</div>
-                        <div style="font-size: 1.2rem; font-weight: bold;">{dose:g}</div>
+                        <div style="font-size: 1.1rem; font-weight: bold;">{dose:g}</div>
                     </div>
-                    <div style="text-align: center; width: 33%;">
+                    <div class="flex-item">
                         <div style="font-size: 0.8rem; opacity: 0.8;">Dias Rest.</div>
-                        <div style="font-size: 1.2rem; font-weight: bold;">{int(resta_dias)}</div>
+                        <div style="font-size: 1.1rem; font-weight: bold;">{int(resta_dias)}</div>
                     </div>
                 </div>
-                """
-                st.markdown(html_metricas, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
                 
                 if atual > 0:
                     st.warning(f"Fim previsto: {data_fim.strftime('%d/%m/%Y')}")
@@ -127,20 +152,19 @@ elif aba == "Financeiro":
         
         tr, tc = f_com['valor'].sum() if not f_com.empty else 0, f_con['valor'].sum() if not f_con.empty else 0
         
-        # Painel Financeiro usando HTML Flexível
-        html_fin = f"""
-        <div style="display: flex; justify-content: space-around; padding: 15px 0; margin-top: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);">
-            <div style="text-align: center; width: 50%; border-right: 1px solid rgba(128,128,128,0.2);">
+        # Painel Financeiro que quebra linha no celular
+        st.markdown(f"""
+        <div class="flex-container">
+            <div class="flex-item">
                 <div style="font-size: 0.9rem; opacity: 0.8;">💊 Remédios</div>
                 <div style="font-size: 1.2rem; font-weight: bold;">R$ {tr:,.2f}</div>
             </div>
-            <div style="text-align: center; width: 50%;">
+            <div class="flex-item" style="border-left: 1px solid rgba(128,128,128,0.2);">
                 <div style="font-size: 0.9rem; opacity: 0.8;">🩺 Consultas</div>
                 <div style="font-size: 1.2rem; font-weight: bold;">R$ {tc:,.2f}</div>
             </div>
         </div>
-        """
-        st.markdown(html_fin, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         
         with st.container(border=True):
             st.write("**INVESTIMENTO TOTAL**")
