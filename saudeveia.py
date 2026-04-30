@@ -28,31 +28,15 @@ def buscar_dados(tabela):
         return pd.DataFrame(res.json()) if res.status_code == 200 else pd.DataFrame()
     except: return pd.DataFrame()
 
-# --- 2. INTERFACE E CSS RESPONSIVO ---
+# --- 2. INTERFACE E CSS SEGURO ---
 st.set_page_config(page_title="Saúde Rock - Gestão Real", layout="centered")
 
-# CSS para forçar colunas lado a lado no Mobile e reduzir espaços inúteis
+# CSS focado apenas em aproveitar melhor o espaço, sem quebrar o layout nativo
 st.markdown("""
     <style>
-    /* Reduz margens do container principal */
-    .block-container { padding-top: 1rem; padding-bottom: 1rem; padding-left: 0.8rem; padding-right: 0.8rem; }
-    
-    /* Força colunas de métricas a ficarem lado a lado no mobile (33% cada) */
-    [data-testid="column"] {
-        flex: 1 1 30% !important;
-        min-width: 30% !important;
-    }
-    
-    /* Estilização das métricas para ficarem menores e caberem na linha */
-    [data-testid="stMetricValue"] { font-size: 1.1rem !important; }
-    [data-testid="stMetricLabel"] { font-size: 0.75rem !important; }
-    
-    /* Ajuste de cards e alertas para economizar espaço vertical */
-    .stAlert { padding: 0.4rem !important; margin-bottom: 0.4rem !important; }
-    h3 { font-size: 1.1rem !important; margin-bottom: 0.4rem !important; }
-    
-    /* Deixar o texto dos botões e selects mais legíveis no mobile */
+    .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; padding-left: 1rem; padding-right: 1rem; }
     .stButton button { width: 100%; }
+    .stAlert { padding: 0.5rem !important; margin-bottom: 0.5rem !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -82,7 +66,6 @@ if aba == "Estoque":
             ini = pd.to_datetime(r['data_inicio'])
             passados = (hoje - ini).days
             dose = float(r['dose_diaria'])
-            # Lógica de cálculo de estoque baseada em dias passados
             atual = max(0.0, float(r['qtd_total']) - (passados * dose))
             resta_dias = float(atual / dose) if dose > 0 else 0
             data_fim = hoje + timedelta(days=resta_dias)
@@ -90,14 +73,27 @@ if aba == "Estoque":
             with st.container(border=True):
                 st.markdown(f"**💊 {r['nome'].upper()}**")
                 
-                # Colunas lado a lado no mobile (via CSS acima)
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Estoque", f"{atual:g}")
-                c2.metric("Dose", f"{dose:g}")
-                c3.metric("Dias", int(resta_dias))
+                # Painel de métricas usando HTML Flexível (Perfeito para celular e PC)
+                html_metricas = f"""
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-top: 1px solid rgba(128,128,128,0.2); border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 10px;">
+                    <div style="text-align: center; width: 33%;">
+                        <div style="font-size: 0.8rem; opacity: 0.8;">Estoque</div>
+                        <div style="font-size: 1.2rem; font-weight: bold;">{atual:g}</div>
+                    </div>
+                    <div style="text-align: center; width: 33%; border-left: 1px solid rgba(128,128,128,0.2); border-right: 1px solid rgba(128,128,128,0.2);">
+                        <div style="font-size: 0.8rem; opacity: 0.8;">Dose/Dia</div>
+                        <div style="font-size: 1.2rem; font-weight: bold;">{dose:g}</div>
+                    </div>
+                    <div style="text-align: center; width: 33%;">
+                        <div style="font-size: 0.8rem; opacity: 0.8;">Dias Rest.</div>
+                        <div style="font-size: 1.2rem; font-weight: bold;">{int(resta_dias)}</div>
+                    </div>
+                </div>
+                """
+                st.markdown(html_metricas, unsafe_allow_html=True)
                 
                 if atual > 0:
-                    st.warning(f"Fim: {data_fim.strftime('%d/%m/%Y')}")
+                    st.warning(f"Fim previsto: {data_fim.strftime('%d/%m/%Y')}")
                 else:
                     st.error("🚨 ESTOQUE ZERADO")
                 
@@ -106,10 +102,8 @@ if aba == "Estoque":
                         v_add = st.number_input("Qtd Comprada", 0.0, key=f"add_{r['id']}")
                         v_pago = st.number_input("Valor R$", 0.0, key=f"v_{r['id']}")
                         if st.button("Salvar Ajuste", key=f"btn_{r['id']}", use_container_width=True):
-                            # Atualiza estoque e reseta data_inicio para hoje
                             requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, 
                                            json={"qtd_total": float(atual + v_add), "data_inicio": hoje.strftime('%Y-%m-%d')})
-                            # Registra no financeiro
                             requests.post(f"{URL_BASE}compras", headers=HEADERS, 
                                            json={"nome_remedio": r['nome'], "valor": float(v_pago), "data_compra": hoje.strftime('%Y-%m-%d')})
                             enviar_telegram(f"✅ Compra: {r['nome']} (+{v_add} un) | R$ {v_pago:.2f}")
@@ -133,10 +127,20 @@ elif aba == "Financeiro":
         
         tr, tc = f_com['valor'].sum() if not f_com.empty else 0, f_con['valor'].sum() if not f_con.empty else 0
         
-        st.divider()
-        col1, col2 = st.columns(2)
-        col1.metric("Remédios", f"R$ {tr:,.2f}")
-        col2.metric("Consultas", f"R$ {tc:,.2f}")
+        # Painel Financeiro usando HTML Flexível
+        html_fin = f"""
+        <div style="display: flex; justify-content: space-around; padding: 15px 0; margin-top: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid rgba(128,128,128,0.2);">
+            <div style="text-align: center; width: 50%; border-right: 1px solid rgba(128,128,128,0.2);">
+                <div style="font-size: 0.9rem; opacity: 0.8;">💊 Remédios</div>
+                <div style="font-size: 1.2rem; font-weight: bold;">R$ {tr:,.2f}</div>
+            </div>
+            <div style="text-align: center; width: 50%;">
+                <div style="font-size: 0.9rem; opacity: 0.8;">🩺 Consultas</div>
+                <div style="font-size: 1.2rem; font-weight: bold;">R$ {tc:,.2f}</div>
+            </div>
+        </div>
+        """
+        st.markdown(html_fin, unsafe_allow_html=True)
         
         with st.container(border=True):
             st.write("**INVESTIMENTO TOTAL**")
@@ -187,7 +191,6 @@ elif aba == "Remover":
                 
                 if tab == "remedios":
                     nome_rem = it_selecionado
-                    # Deleta o remédio e os gastos vinculados a ele para limpar o financeiro
                     requests.delete(f"{URL_BASE}remedios?id=eq.{id_item}", headers=HEADERS)
                     requests.delete(f"{URL_BASE}compras?nome_remedio=eq.{nome_rem}", headers=HEADERS)
                 else:
