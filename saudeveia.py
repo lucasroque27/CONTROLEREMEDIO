@@ -847,11 +847,26 @@ if aba == "Estoque":
             atual = max(0.0, float(r["qtd_total"]) - (passados * dose))
             resta = float(atual / dose) if dose > 0 else 0
             data_fim = hoje + timedelta(days=resta)
+            alerta_ja_enviado = bool(r.get("alerta_enviado", False))
 
             # Alerta Telegram
-            if 0 < resta <= 7 and r["id"] not in st.session_state.alertas_enviados:
-                enviar_telegram(f"⚠️ {r['nome']} acaba em {int(resta)} dias!")
+            if (
+                0 < resta <= 7
+                and not alerta_ja_enviado
+                and r["id"] not in st.session_state.alertas_enviados
+            ):
+                telegram_ok = enviar_telegram(f"⚠️ {r['nome']} acaba em {int(resta)} dias!")
                 st.session_state.alertas_enviados.append(r["id"])
+                if telegram_ok:
+                    requisicao_supabase(
+                        "PATCH",
+                        f"remedios?id=eq.{r['id']}",
+                        "Alerta enviado, mas não foi possível marcar como enviado no banco",
+                        json={"alerta_enviado": True},
+                    )
+                    st.cache_data.clear()
+                else:
+                    st.warning(f"Não foi possível enviar o alerta do Telegram para {r['nome']}.")
 
             with st.container(border=True):
                 if dose <= 0:
@@ -925,6 +940,7 @@ if aba == "Estoque":
                                 json={
                                     "qtd_total": float(atual + v_add),
                                     "data_inicio": hoje.strftime("%Y-%m-%d"),
+                                    "alerta_enviado": False,
                                 },
                             )
                             if not ok_estoque:
@@ -1063,6 +1079,7 @@ elif aba == "Cadastrar":
                             "qtd_total": float(q),
                             "dose_diaria": float(d),
                             "data_inicio": datetime.now().strftime("%Y-%m-%d"),
+                            "alerta_enviado": False,
                         },
                     )
                     if not ok_remedio:
