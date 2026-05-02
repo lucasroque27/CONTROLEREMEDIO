@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import time
+from html import escape
 
 # --- 1. CONFIGURAÇÕES ---
 URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
@@ -72,7 +73,7 @@ st.markdown(
 
     div.block-container {
         max-width: 760px;
-        padding-top: 1rem;
+        padding-top: 2.75rem;
         padding-left: 1rem;
         padding-right: 1rem;
         padding-bottom: 2rem;
@@ -111,6 +112,7 @@ st.markdown(
 
     div[data-testid="stSegmentedControl"] div[role="radiogroup"] {
         display: flex;
+        flex-wrap: nowrap;
         gap: .4rem;
         overflow-x: auto;
         padding: .1rem .05rem .25rem;
@@ -122,13 +124,73 @@ st.markdown(
         border-radius: 8px;
         white-space: nowrap;
         font-weight: 700;
+        flex: 0 0 auto;
     }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border: 1px solid var(--saude-border);
         border-radius: 10px;
         background: var(--saude-card);
-        box-shadow: 0 10px 28px rgba(24, 32, 47, 0.06);
+        box-shadow: 0 8px 20px rgba(24, 32, 47, 0.05);
+        margin-bottom: .55rem;
+    }
+
+    .medicine-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(58px, .65fr));
+        gap: .45rem;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    .medicine-name {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: .15rem;
+    }
+
+    .medicine-title {
+        font-weight: 800;
+        font-size: .94rem;
+        color: var(--saude-text);
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+
+    .medicine-date {
+        color: var(--saude-muted);
+        font-size: .78rem;
+        line-height: 1.2;
+    }
+
+    .medicine-pill {
+        border: 1px solid #d8e8ff;
+        border-radius: 8px;
+        background: var(--saude-soft);
+        padding: .42rem .45rem;
+        min-width: 0;
+    }
+
+    .medicine-label {
+        color: var(--saude-muted);
+        font-size: .68rem;
+        line-height: 1.05;
+        margin-bottom: .18rem;
+    }
+
+    .medicine-value {
+        color: var(--saude-text);
+        font-weight: 800;
+        font-size: .98rem;
+        line-height: 1.05;
+        overflow-wrap: anywhere;
+    }
+
+    .medicine-empty {
+        color: var(--saude-danger);
+        font-weight: 800;
     }
 
     div[data-testid="stMetric"] {
@@ -171,9 +233,9 @@ st.markdown(
 
     @media (max-width: 640px) {
         div.block-container {
-            padding-top: .65rem;
-            padding-left: .75rem;
-            padding-right: .75rem;
+            padding-top: 3.25rem;
+            padding-left: .65rem;
+            padding-right: .65rem;
         }
 
         .app-title {
@@ -206,6 +268,31 @@ st.markdown(
 
         [data-testid="stExpander"] details {
             border-radius: 8px;
+        }
+
+        .medicine-card {
+            grid-template-columns: minmax(86px, 1.35fr) repeat(3, minmax(52px, .7fr));
+            gap: .35rem;
+        }
+
+        .medicine-title {
+            font-size: .82rem;
+        }
+
+        .medicine-date {
+            font-size: .68rem;
+        }
+
+        .medicine-pill {
+            padding: .36rem .34rem;
+        }
+
+        .medicine-label {
+            font-size: .62rem;
+        }
+
+        .medicine-value {
+            font-size: .88rem;
         }
     }
     </style>
@@ -262,17 +349,43 @@ if aba == "Estoque":
                 st.session_state.alertas_enviados.append(r["id"])
 
             with st.container(border=True):
-                st.markdown(f"**{str(r['nome']).upper()}**")
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Qtd", f"{atual:g}")
-                c2.metric("Dose", f"{dose:g}")
-                c3.metric("Dias", int(resta))
+                if dose <= 0:
+                    status_texto = "Dose inválida"
+                    status_classe = "medicine-empty"
+                elif resta > 0:
+                    status_texto = f"Término: {data_fim.strftime('%d/%m/%Y')}"
+                    status_classe = ""
+                else:
+                    status_texto = "Estoque zerado"
+                    status_classe = "medicine-empty"
+
+                st.markdown(
+                    f"""
+                    <div class="medicine-card">
+                        <div class="medicine-name">
+                            <div class="medicine-title">{escape(str(r['nome']).upper())}</div>
+                            <div class="medicine-date {status_classe}">{status_texto}</div>
+                        </div>
+                        <div class="medicine-pill">
+                            <div class="medicine-label">Qtd</div>
+                            <div class="medicine-value">{atual:g}</div>
+                        </div>
+                        <div class="medicine-pill">
+                            <div class="medicine-label">Dose</div>
+                            <div class="medicine-value">{dose:g}</div>
+                        </div>
+                        <div class="medicine-pill">
+                            <div class="medicine-label">Dias</div>
+                            <div class="medicine-value">{int(resta)}</div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
                 if dose <= 0:
                     st.warning("Dose diária precisa ser maior que zero.")
-                elif resta > 0:
-                    st.caption(f"📅 Término: {data_fim.strftime('%d/%m/%Y')}")
-                else:
+                elif resta <= 0:
                     st.error("Estoque Zerado")
 
                 if st.session_state.autenticado:
