@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -85,10 +84,12 @@ st.markdown(
 
     .app-title {
         text-align: center;
-        margin: 0 0 .15rem;
+        margin: .35rem 0 .25rem;
         font-size: clamp(1.35rem, 4vw, 1.75rem);
+        line-height: 1.35;
         font-weight: 800;
         color: var(--saude-text);
+        overflow: visible;
     }
 
     .app-subtitle {
@@ -96,6 +97,7 @@ st.markdown(
         margin: 0 0 1rem;
         color: var(--saude-muted);
         font-size: .9rem;
+        line-height: 1.35;
     }
 
     [data-testid="stSidebar"] {
@@ -103,13 +105,23 @@ st.markdown(
         border-right: 1px solid var(--saude-border);
     }
 
-    div[data-testid="stSelectSlider"] {
-        margin-bottom: .75rem;
+    div[data-testid="stSegmentedControl"] {
+        margin-bottom: .9rem;
     }
 
-    div[data-testid="stSelectSlider"] > div {
+    div[data-testid="stSegmentedControl"] div[role="radiogroup"] {
+        display: flex;
+        gap: .4rem;
         overflow-x: auto;
-        padding-bottom: .15rem;
+        padding: .1rem .05rem .25rem;
+        scrollbar-width: thin;
+    }
+
+    div[data-testid="stSegmentedControl"] label {
+        min-height: 2.35rem;
+        border-radius: 8px;
+        white-space: nowrap;
+        font-weight: 700;
     }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
@@ -166,6 +178,8 @@ st.markdown(
 
         .app-title {
             font-size: 1.35rem;
+            margin-top: .5rem;
+            line-height: 1.4;
         }
 
         div[data-testid="stHorizontalBlock"] {
@@ -219,11 +233,12 @@ with st.sidebar:
             st.rerun()
 
 # Menu Superior Compacto
-st.markdown("<h3 class='app-title'>🏥 Minha Saúde</h3>", unsafe_allow_html=True)
+st.markdown("<h3 class='app-title'>Minha Saúde</h3>", unsafe_allow_html=True)
 st.markdown("<p class='app-subtitle'>Controle de remédios, consultas e gastos</p>", unsafe_allow_html=True)
-aba = st.select_slider(
-    "",
+aba = st.segmented_control(
+    "Menu",
     options=["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"],
+    default="Estoque",
     label_visibility="collapsed",
 )
 
