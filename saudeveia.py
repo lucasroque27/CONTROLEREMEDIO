@@ -98,6 +98,82 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+PALETAS = {
+    "Clinico Azul": {
+        "bg": "#f7f9fc",
+        "card": "#ffffff",
+        "text": "#172033",
+        "muted": "#667085",
+        "border": "#d7dee8",
+        "accent": "#1d5f8f",
+        "accent_strong": "#164a73",
+        "soft": "#eef6fb",
+        "success": "#167c5a",
+        "success_bg": "#edf8f4",
+        "danger": "#b42318",
+        "danger_bg": "#fff1f0",
+        "warning": "#a15c07",
+        "warning_bg": "#fff7e8",
+        "header": "rgba(247, 249, 252, 0.94)",
+    },
+    "Coral Vivo": {
+        "bg": "#fff8f5",
+        "card": "#ffffff",
+        "text": "#211b1b",
+        "muted": "#746b66",
+        "border": "#eadbd4",
+        "accent": "#d9472f",
+        "accent_strong": "#a93624",
+        "soft": "#fff0ea",
+        "success": "#18715c",
+        "success_bg": "#ecf8f4",
+        "danger": "#b42318",
+        "danger_bg": "#fff1f0",
+        "warning": "#9a5b00",
+        "warning_bg": "#fff5df",
+        "header": "rgba(255, 248, 245, 0.94)",
+    },
+    "Verde Safira": {
+        "bg": "#f4fbfa",
+        "card": "#ffffff",
+        "text": "#102326",
+        "muted": "#5d7174",
+        "border": "#cfe4e2",
+        "accent": "#007f7a",
+        "accent_strong": "#005f5b",
+        "soft": "#e8f7f5",
+        "success": "#0f7a4f",
+        "success_bg": "#eaf8f1",
+        "danger": "#b42318",
+        "danger_bg": "#fff1f0",
+        "warning": "#9a6200",
+        "warning_bg": "#fff7e2",
+        "header": "rgba(244, 251, 250, 0.94)",
+    },
+    "Safira Impacto": {
+        "bg": "#f5f7ff",
+        "card": "#ffffff",
+        "text": "#121a35",
+        "muted": "#5f6882",
+        "border": "#d8def2",
+        "accent": "#3454d1",
+        "accent_strong": "#243a99",
+        "soft": "#eef1ff",
+        "success": "#14795b",
+        "success_bg": "#edf8f4",
+        "danger": "#b42318",
+        "danger_bg": "#fff1f0",
+        "warning": "#9b5b00",
+        "warning_bg": "#fff6e3",
+        "header": "rgba(245, 247, 255, 0.94)",
+    },
+}
+
+with st.sidebar:
+    tema_visual = st.selectbox("Tema visual", list(PALETAS.keys()), index=0)
+
+paleta = PALETAS[tema_visual]
+
 st.markdown(
     """
     <style>
@@ -397,6 +473,50 @@ st.markdown(
             font-size: .88rem;
         }
     }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    f"""
+    <style>
+    :root {{
+        --saude-bg: {paleta["bg"]};
+        --saude-card: {paleta["card"]};
+        --saude-text: {paleta["text"]};
+        --saude-muted: {paleta["muted"]};
+        --saude-border: {paleta["border"]};
+        --saude-accent: {paleta["accent"]};
+        --saude-accent-strong: {paleta["accent_strong"]};
+        --saude-soft: {paleta["soft"]};
+        --saude-success: {paleta["success"]};
+        --saude-success-bg: {paleta["success_bg"]};
+        --saude-danger: {paleta["danger"]};
+        --saude-danger-bg: {paleta["danger_bg"]};
+        --saude-warning: {paleta["warning"]};
+        --saude-warning-bg: {paleta["warning_bg"]};
+    }}
+
+    [data-testid="stHeader"] {{
+        background: {paleta["header"]};
+    }}
+
+    .app-title::before {{
+        content: "+";
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.35rem;
+        height: 1.35rem;
+        margin-right: .45rem;
+        border-radius: 6px;
+        background: var(--saude-accent);
+        color: #ffffff;
+        font-size: 1rem;
+        line-height: 1;
+        vertical-align: .08rem;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
