@@ -503,8 +503,27 @@ st.markdown(
         white-space: nowrap;
         font-weight: 650;
         flex: 0 0 auto;
-        border-color: var(--saude-border);
-        color: var(--saude-text);
+        border: 1px solid var(--saude-border) !important;
+        background: var(--saude-card) !important;
+        color: var(--saude-text) !important;
+    }
+
+    div[data-testid="stSegmentedControl"] label * {
+        color: var(--saude-text) !important;
+    }
+
+    div[data-testid="stSegmentedControl"] label:hover {
+        border-color: var(--saude-accent) !important;
+        background: var(--saude-soft) !important;
+    }
+
+    div[data-testid="stSegmentedControl"] label:has(input:checked) {
+        border-color: var(--saude-accent) !important;
+        background: var(--saude-accent) !important;
+    }
+
+    div[data-testid="stSegmentedControl"] label:has(input:checked) * {
+        color: #ffffff !important;
     }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
