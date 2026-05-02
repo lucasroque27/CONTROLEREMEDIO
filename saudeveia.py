@@ -269,6 +269,142 @@ PALETAS = {
         "warning_bg": "#fff7df",
         "header": "rgba(240, 253, 255, 0.94)",
     },
+    "Dark Hospital": {
+        "bg": "#0f172a",
+        "card": "#111827",
+        "text": "#f8fafc",
+        "muted": "#cbd5e1",
+        "border": "#334155",
+        "accent": "#38bdf8",
+        "accent_strong": "#7dd3fc",
+        "soft": "#1e293b",
+        "success": "#34d399",
+        "success_bg": "#102820",
+        "danger": "#f87171",
+        "danger_bg": "#3b1216",
+        "warning": "#fbbf24",
+        "warning_bg": "#33240a",
+        "header": "rgba(15, 23, 42, 0.94)",
+    },
+    "Preto Neon": {
+        "bg": "#050505",
+        "card": "#111111",
+        "text": "#f5f5f5",
+        "muted": "#c4c4c4",
+        "border": "#2f2f2f",
+        "accent": "#00f5d4",
+        "accent_strong": "#5fffee",
+        "soft": "#102321",
+        "success": "#00ff88",
+        "success_bg": "#0a2115",
+        "danger": "#ff4d6d",
+        "danger_bg": "#2a0b12",
+        "warning": "#fee440",
+        "warning_bg": "#2a2408",
+        "header": "rgba(5, 5, 5, 0.94)",
+    },
+    "Neon Cyber": {
+        "bg": "#11001c",
+        "card": "#1a0b2e",
+        "text": "#fff7ff",
+        "muted": "#d8b4fe",
+        "border": "#4c1d95",
+        "accent": "#f72585",
+        "accent_strong": "#ff8cc6",
+        "soft": "#2a1145",
+        "success": "#4ade80",
+        "success_bg": "#11251b",
+        "danger": "#fb7185",
+        "danger_bg": "#35111a",
+        "warning": "#facc15",
+        "warning_bg": "#302407",
+        "header": "rgba(17, 0, 28, 0.94)",
+    },
+    "Rosa Luxo": {
+        "bg": "#fff1f8",
+        "card": "#ffffff",
+        "text": "#301525",
+        "muted": "#7a6070",
+        "border": "#f0c7dc",
+        "accent": "#e11d74",
+        "accent_strong": "#9f1239",
+        "soft": "#fce7f3",
+        "success": "#0f766e",
+        "success_bg": "#e7f8f5",
+        "danger": "#be123c",
+        "danger_bg": "#fff1f2",
+        "warning": "#a16207",
+        "warning_bg": "#fff7df",
+        "header": "rgba(255, 241, 248, 0.94)",
+    },
+    "Vinho Premium": {
+        "bg": "#1f0a12",
+        "card": "#2a101a",
+        "text": "#fff7f9",
+        "muted": "#e6c6d0",
+        "border": "#5b2336",
+        "accent": "#ff477e",
+        "accent_strong": "#ff8fab",
+        "soft": "#3a1724",
+        "success": "#6ee7b7",
+        "success_bg": "#10261d",
+        "danger": "#fb7185",
+        "danger_bg": "#3a111b",
+        "warning": "#fbbf24",
+        "warning_bg": "#33240a",
+        "header": "rgba(31, 10, 18, 0.94)",
+    },
+    "Azul Noturno": {
+        "bg": "#061826",
+        "card": "#0b2538",
+        "text": "#f0f9ff",
+        "muted": "#bae6fd",
+        "border": "#164e63",
+        "accent": "#22d3ee",
+        "accent_strong": "#67e8f9",
+        "soft": "#10364d",
+        "success": "#2dd4bf",
+        "success_bg": "#0b2b27",
+        "danger": "#fb7185",
+        "danger_bg": "#34131a",
+        "warning": "#facc15",
+        "warning_bg": "#302407",
+        "header": "rgba(6, 24, 38, 0.94)",
+    },
+    "Roxo Escuro": {
+        "bg": "#14091f",
+        "card": "#21102f",
+        "text": "#faf5ff",
+        "muted": "#d8b4fe",
+        "border": "#4a2765",
+        "accent": "#a855f7",
+        "accent_strong": "#d8b4fe",
+        "soft": "#321849",
+        "success": "#4ade80",
+        "success_bg": "#12251a",
+        "danger": "#fb7185",
+        "danger_bg": "#34111a",
+        "warning": "#fbbf24",
+        "warning_bg": "#302407",
+        "header": "rgba(20, 9, 31, 0.94)",
+    },
+    "Grafite Ouro": {
+        "bg": "#111111",
+        "card": "#1c1c1c",
+        "text": "#fffdf5",
+        "muted": "#d6d3c8",
+        "border": "#3a3a3a",
+        "accent": "#f59e0b",
+        "accent_strong": "#fcd34d",
+        "soft": "#2a2417",
+        "success": "#34d399",
+        "success_bg": "#10261d",
+        "danger": "#f87171",
+        "danger_bg": "#341316",
+        "warning": "#fbbf24",
+        "warning_bg": "#302407",
+        "header": "rgba(17, 17, 17, 0.94)",
+    },
 }
 
 if "autenticado" not in st.session_state:
@@ -340,8 +476,12 @@ st.markdown(
     }
 
     [data-testid="stSidebar"] {
-        background: #ffffff;
+        background: var(--saude-card);
         border-right: 1px solid var(--saude-border);
+    }
+
+    [data-testid="stSidebar"] * {
+        color: var(--saude-text);
     }
 
     div[data-testid="stSegmentedControl"] {
@@ -364,6 +504,7 @@ st.markdown(
         font-weight: 650;
         flex: 0 0 auto;
         border-color: var(--saude-border);
+        color: var(--saude-text);
     }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
@@ -407,7 +548,7 @@ st.markdown(
     }
 
     .medicine-pill {
-        border: 1px solid #d9e8f3;
+        border: 1px solid var(--saude-border);
         border-radius: 8px;
         background: var(--saude-soft);
         padding: .42rem .45rem;
@@ -463,7 +604,7 @@ st.markdown(
 
     div[data-testid="stMetric"] {
         background: var(--saude-soft);
-        border: 1px solid #d9e8f3;
+        border: 1px solid var(--saude-border);
         border-radius: 8px;
         padding: .65rem .7rem;
         min-height: 86px;
@@ -487,6 +628,10 @@ st.markdown(
         overflow: hidden;
     }
 
+    input, textarea, select {
+        color: var(--saude-text) !important;
+    }
+
     div.stButton > button,
     div.stDownloadButton > button,
     div[data-testid="stFormSubmitButton"] > button {
@@ -494,6 +639,8 @@ st.markdown(
         min-height: 2.75rem;
         font-weight: 650;
         border-color: var(--saude-border);
+        background: var(--saude-card);
+        color: var(--saude-text);
     }
 
     div.stButton > button[kind="primary"] {
