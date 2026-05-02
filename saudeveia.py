@@ -496,26 +496,29 @@ st.markdown(
     }
 
     div[data-testid="stSegmentedControl"] {
-        margin-bottom: .9rem;
+        margin-bottom: .95rem;
     }
 
     div[data-testid="stSegmentedControl"] div[role="radiogroup"] {
         display: flex;
         flex-wrap: nowrap;
-        gap: .4rem;
+        gap: 0;
         overflow-x: auto;
-        padding: .1rem .05rem .25rem;
+        padding: .18rem;
         scrollbar-width: thin;
+        border: 1px solid var(--saude-border);
+        border-radius: 7px;
+        background: color-mix(in srgb, var(--saude-soft) 55%, #ffffff);
     }
 
     div[data-testid="stSegmentedControl"] label {
-        min-height: 2.3rem;
-        border-radius: 8px;
+        min-height: 2.15rem;
+        border-radius: 5px;
         white-space: nowrap;
         font-weight: 650;
         flex: 0 0 auto;
-        border: 1px solid var(--saude-border) !important;
-        background: var(--saude-card) !important;
+        border: 1px solid transparent !important;
+        background: transparent !important;
         color: var(--saude-text) !important;
     }
 
@@ -525,7 +528,7 @@ st.markdown(
 
     div[data-testid="stSegmentedControl"] label:hover {
         border-color: var(--saude-accent) !important;
-        background: var(--saude-soft) !important;
+        background: var(--saude-card) !important;
     }
 
     div[data-testid="stSegmentedControl"] label:has(input:checked) {
@@ -539,20 +542,20 @@ st.markdown(
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border: 1px solid var(--saude-border);
-        border-radius: 10px;
+        border-radius: 7px;
         background: var(--saude-card);
-        box-shadow: 0 6px 18px rgba(23, 32, 51, 0.04);
-        margin-bottom: .55rem;
+        box-shadow: 0 4px 14px rgba(23, 32, 51, 0.035);
+        margin-bottom: .48rem;
     }
 
     .medicine-card {
         display: grid;
-        grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(58px, .65fr));
-        gap: .45rem;
+        grid-template-columns: minmax(0, 1.55fr) repeat(3, minmax(58px, .55fr));
+        gap: .38rem;
         align-items: stretch;
         width: 100%;
         border-left: 3px solid var(--saude-accent);
-        padding-left: .55rem;
+        padding-left: .5rem;
     }
 
     .medicine-name {
@@ -573,15 +576,31 @@ st.markdown(
 
     .medicine-date {
         color: var(--saude-muted);
-        font-size: .78rem;
+        font-size: .74rem;
         line-height: 1.2;
+    }
+
+    .medicine-status {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        max-width: 100%;
+        margin-bottom: .12rem;
+        padding: .12rem .38rem;
+        border-radius: 999px;
+        border: 1px solid var(--saude-border);
+        background: var(--saude-soft);
+        color: var(--saude-accent-strong);
+        font-size: .64rem;
+        font-weight: 760;
+        line-height: 1.1;
     }
 
     .medicine-pill {
         border: 1px solid var(--saude-border);
-        border-radius: 8px;
+        border-radius: 6px;
         background: var(--saude-soft);
-        padding: .42rem .45rem;
+        padding: .36rem .4rem;
         min-width: 0;
     }
 
@@ -614,6 +633,12 @@ st.markdown(
         color: var(--saude-warning);
     }
 
+    .medicine-warning .medicine-status {
+        border-color: #f4d7a1;
+        background: var(--saude-warning-bg);
+        color: var(--saude-warning);
+    }
+
     .medicine-critical {
         border-left-color: var(--saude-danger);
     }
@@ -627,6 +652,12 @@ st.markdown(
         color: var(--saude-danger);
     }
 
+    .medicine-critical .medicine-status {
+        border-color: #f3b8b3;
+        background: var(--saude-danger-bg);
+        color: var(--saude-danger);
+    }
+
     .medicine-empty {
         color: var(--saude-danger);
         font-weight: 760;
@@ -635,7 +666,7 @@ st.markdown(
     div[data-testid="stMetric"] {
         background: var(--saude-soft);
         border: 1px solid var(--saude-border);
-        border-radius: 8px;
+        border-radius: 6px;
         padding: .65rem .7rem;
         min-height: 86px;
     }
@@ -654,7 +685,7 @@ st.markdown(
 
     [data-testid="stDataFrame"] {
         border: 1px solid var(--saude-border);
-        border-radius: 8px;
+        border-radius: 7px;
         overflow: hidden;
     }
 
@@ -666,11 +697,12 @@ st.markdown(
     div.stDownloadButton > button,
     div[data-testid="stFormSubmitButton"] > button {
         border-radius: 8px;
-        min-height: 2.75rem;
+        min-height: 2.55rem;
         font-weight: 650;
         border-color: var(--saude-border);
         background: var(--saude-card);
         color: var(--saude-text);
+        box-shadow: none;
     }
 
     div.stButton > button[kind="primary"] {
@@ -686,7 +718,7 @@ st.markdown(
     }
 
     .stAlert {
-        border-radius: 8px;
+        border-radius: 7px;
     }
 
     @media (max-width: 640px) {
@@ -742,8 +774,13 @@ st.markdown(
             font-size: .68rem;
         }
 
+        .medicine-status {
+            font-size: .58rem;
+            padding: .1rem .3rem;
+        }
+
         .medicine-pill {
-            padding: .36rem .34rem;
+            padding: .32rem .32rem;
         }
 
         .medicine-label {
@@ -870,7 +907,8 @@ if aba == "Estoque":
 
             with st.container(border=True):
                 if dose <= 0:
-                    status_texto = "Dose inválida"
+                    status_nome = "Dose inválida"
+                    status_texto = ""
                     status_classe = "medicine-empty"
                     card_classe = "medicine-critical"
                 elif resta > 0:
@@ -886,8 +924,9 @@ if aba == "Estoque":
                         status_nome = "Normal"
                         card_classe = ""
                         status_classe = ""
-                    status_texto = f"{status_nome} • Término: {data_fim.strftime('%d/%m/%Y')}"
+                    status_texto = f"Término: {data_fim.strftime('%d/%m/%Y')}"
                 else:
+                    status_nome = "Zerado"
                     status_texto = "Estoque zerado"
                     status_classe = "medicine-empty"
                     card_classe = "medicine-critical"
@@ -897,6 +936,7 @@ if aba == "Estoque":
                     <div class="medicine-card {card_classe}">
                         <div class="medicine-name">
                             <div class="medicine-title">{escape(str(r['nome']).upper())}</div>
+                            <div class="medicine-status">{status_nome}</div>
                             <div class="medicine-date {status_classe}">{status_texto}</div>
                         </div>
                         <div class="medicine-pill">
@@ -1154,7 +1194,7 @@ elif aba == "Remover":
         if not df_del.empty:
             c = "nome" if tab == "remedios" else ("nome_remedio" if tab == "compras" else "medico")
             item = st.selectbox("Item", df_del[c].tolist())
-            if st.button("🗑️ APAGAR", type="primary", use_container_width=True):
+            if st.button("Apagar registro", type="primary", use_container_width=True):
                 id_i = df_del[df_del[c] == item]["id"].values[0]
                 ok_delete = requisicao_supabase(
                     "DELETE",
