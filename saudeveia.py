@@ -271,10 +271,12 @@ PALETAS = {
     },
 }
 
-with st.sidebar:
-    tema_visual = st.selectbox("Tema visual", list(PALETAS.keys()), index=0)
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+if "tema_visual" not in st.session_state:
+    st.session_state.tema_visual = "Clinico Azul"
 
-paleta = PALETAS[tema_visual]
+paleta = PALETAS.get(st.session_state.tema_visual, PALETAS["Clinico Azul"])
 
 st.markdown(
     """
@@ -639,6 +641,7 @@ with st.sidebar:
                 st.session_state.autenticado = True
                 st.rerun()
     else:
+        st.selectbox("Tema visual", list(PALETAS.keys()), key="tema_visual")
         if st.button("Sair"):
             st.session_state.autenticado = False
             st.rerun()
