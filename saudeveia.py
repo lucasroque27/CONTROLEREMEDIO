@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
-import time
 from html import escape
 
 # --- 1. CONFIGURAÇÕES ---
@@ -38,6 +37,58 @@ def buscar_dados(tabela):
 
 def dataframe_para_csv(df):
     return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def avisar_sucesso(mensagem):
+    st.session_state.mensagem_sucesso = mensagem
+
+
+def mostrar_mensagem_sucesso():
+    mensagem = st.session_state.pop("mensagem_sucesso", None)
+    if mensagem:
+        st.success(mensagem)
+
+
+def montar_gastos_unificados(df_com, df_con):
+    registros = []
+
+    if not df_com.empty:
+        compras = df_com.copy()
+        compras["data_compra"] = pd.to_datetime(compras["data_compra"], errors="coerce")
+        for _, item in compras.iterrows():
+            registros.append(
+                {
+                    "data": item["data_compra"],
+                    "tipo": "Remédio",
+                    "descricao": item.get("nome_remedio", ""),
+                    "valor": float(item.get("valor", 0) or 0),
+                    "origem": "compras",
+                    "id_origem": item.get("id", ""),
+                }
+            )
+
+    if not df_con.empty:
+        consultas = df_con.copy()
+        consultas["data_consulta"] = pd.to_datetime(consultas["data_consulta"], errors="coerce")
+        for _, item in consultas.iterrows():
+            registros.append(
+                {
+                    "data": item["data_consulta"],
+                    "tipo": "Consulta",
+                    "descricao": item.get("medico", ""),
+                    "valor": float(item.get("valor", 0) or 0),
+                    "origem": "consultas",
+                    "id_origem": item.get("id", ""),
+                }
+            )
+
+    colunas = ["data", "tipo", "descricao", "valor", "origem", "id_origem"]
+    df_gastos = pd.DataFrame(registros, columns=colunas)
+    if not df_gastos.empty:
+        df_gastos = df_gastos.dropna(subset=["data"]).sort_values("data", ascending=False)
+        df_gastos["data"] = df_gastos["data"].dt.strftime("%Y-%m-%d")
+
+    return df_gastos
 
 
 # --- 2. CONFIGURAÇÃO DE TELA E CSS ---
@@ -328,6 +379,7 @@ aba = st.segmented_control(
     default="Estoque",
     label_visibility="collapsed",
 )
+mostrar_mensagem_sucesso()
 
 # --- 3. TELAS ---
 
@@ -411,8 +463,7 @@ if aba == "Estoque":
                                 },
                             )
                             st.cache_data.clear()
-                            st.success("Ok!")
-                            time.sleep(1)
+                            avisar_sucesso("Estoque atualizado com sucesso.")
                             st.rerun()
     else:
         st.info("Nenhum remédio cadastrado ainda.")
@@ -421,6 +472,7 @@ elif aba == "Financeiro":
     st.subheader("💰 Gastos Mensais")
     df_com = buscar_dados("compras")
     df_con = buscar_dados("consultas")
+    df_gastos = montar_gastos_unificados(df_com, df_con)
 
     col_a, col_m = st.columns(2)
     ano_sel = col_a.selectbox("Ano", [2025, 2026], index=1)
@@ -428,33 +480,41 @@ elif aba == "Financeiro":
 
     total_r = 0.0
     total_c = 0.0
+    filtro_mes = pd.DataFrame()
 
-    if not df_com.empty:
-        df_com["data_compra"] = pd.to_datetime(df_com["data_compra"])
-        filtro_r = df_com[
-            (df_com["data_compra"].dt.year == ano_sel)
-            & (df_com["data_compra"].dt.month == mes_sel)
-        ]
-        total_r = filtro_r["valor"].sum()
-        if not filtro_r.empty:
-            st.write("**Detalhamento Remédios:**")
+    if not df_gastos.empty:
+        datas_gastos = pd.to_datetime(df_gastos["data"], errors="coerce")
+        filtro_mes = df_gastos[
+            (datas_gastos.dt.year == ano_sel)
+            & (datas_gastos.dt.month == mes_sel)
+        ].copy()
+
+        total_r = filtro_mes.loc[filtro_mes["tipo"] == "Remédio", "valor"].sum()
+        total_c = filtro_mes.loc[filtro_mes["tipo"] == "Consulta", "valor"].sum()
+
+        if not filtro_mes.empty:
+            st.write("**Detalhamento unificado:**")
             st.dataframe(
-                filtro_r[["nome_remedio", "valor", "data_compra"]],
+                filtro_mes[["data", "tipo", "descricao", "valor"]],
                 hide_index=True,
                 use_container_width=True,
             )
-
-    if not df_con.empty:
-        df_con["data_consulta"] = pd.to_datetime(df_con["data_consulta"])
-        filtro_c = df_con[
-            (df_con["data_consulta"].dt.year == ano_sel)
-            & (df_con["data_consulta"].dt.month == mes_sel)
-        ]
-        total_c = filtro_c["valor"].sum()
+        else:
+            st.info("Nenhum gasto encontrado para esse mês.")
 
     st.divider()
     st.metric("TOTAL INVESTIDO", f"R$ {total_r + total_c:,.2f}")
     st.info(f"Remédios: R$ {total_r:,.2f} | Consultas: R$ {total_c:,.2f}")
+    if not df_gastos.empty:
+        st.download_button(
+            "Baixar planilha unificada",
+            data=dataframe_para_csv(df_gastos),
+            file_name="gastos_unificados_power_bi.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    else:
+        st.info("Ainda não há dados financeiros para baixar.")
 
 elif aba == "Consultas":
     df = buscar_dados("consultas")
@@ -502,6 +562,7 @@ elif aba == "Cadastrar":
                         },
                     )
                     st.cache_data.clear()
+                    avisar_sucesso("Remédio cadastrado com sucesso.")
                     st.rerun()
             else:
                 m = st.text_input("Médico")
@@ -517,6 +578,7 @@ elif aba == "Cadastrar":
                         },
                     )
                     st.cache_data.clear()
+                    avisar_sucesso("Consulta cadastrada com sucesso.")
                     st.rerun()
     else:
         st.warning("Acesse o menu ADM na lateral.")
@@ -534,6 +596,7 @@ elif aba == "Remover":
                 if tab == "remedios":
                     requests.delete(f"{URL_BASE}compras?nome_remedio=eq.{item}", headers=HEADERS)
                 st.cache_data.clear()
+                avisar_sucesso("Item removido com sucesso.")
                 st.rerun()
         else:
             st.info("Não há itens para remover nessa tabela.")
