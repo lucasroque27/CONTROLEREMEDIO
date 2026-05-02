@@ -847,7 +847,7 @@ if "alertas_enviados" not in st.session_state:
 
 # Menu Lateral (Login)
 with st.sidebar:
-    st.title("🔒 Controle medicamentos")
+    st.title("🔒 ADM")
     if not st.session_state.autenticado:
         senha = st.text_input("Senha", type="password")
         if st.button("Entrar") or senha == "1234":
@@ -861,7 +861,7 @@ with st.sidebar:
             st.rerun()
 
 # Menu Superior Compacto
-st.markdown("<h3 class='app-title'>MEDICAMENTOS DA VEIA</h3>", unsafe_allow_html=True)
+st.markdown("<h3 class='app-title'>Minha Saúde</h3>", unsafe_allow_html=True)
 st.markdown("<p class='app-subtitle'>Controle de remédios, consultas e gastos</p>", unsafe_allow_html=True)
 aba = st.segmented_control(
     "Menu",
