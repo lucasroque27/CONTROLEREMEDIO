@@ -102,15 +102,18 @@ st.markdown(
     """
     <style>
     :root {
-        --saude-bg: #f4f7fa;
+        --saude-bg: #f7f9fc;
         --saude-card: #ffffff;
         --saude-text: #172033;
-        --saude-muted: #627084;
-        --saude-border: #d8e0ea;
-        --saude-accent: #0f6e8c;
-        --saude-accent-strong: #0a5570;
-        --saude-soft: #edf7f9;
+        --saude-muted: #667085;
+        --saude-border: #d7dee8;
+        --saude-accent: #1d5f8f;
+        --saude-accent-strong: #164a73;
+        --saude-soft: #eef6fb;
+        --saude-success: #167c5a;
+        --saude-success-bg: #edf8f4;
         --saude-danger: #b42318;
+        --saude-danger-bg: #fff1f0;
         --saude-warning: #a15c07;
         --saude-warning-bg: #fff7e8;
     }
@@ -121,9 +124,9 @@ st.markdown(
     }
 
     [data-testid="stHeader"] {
-        background: rgba(244, 247, 250, 0.94);
+        background: rgba(247, 249, 252, 0.94);
         backdrop-filter: blur(8px);
-        border-bottom: 1px solid rgba(216, 224, 234, .8);
+        border-bottom: 1px solid rgba(215, 222, 232, .82);
     }
 
     div.block-container {
@@ -187,7 +190,7 @@ st.markdown(
         border: 1px solid var(--saude-border);
         border-radius: 10px;
         background: var(--saude-card);
-        box-shadow: 0 6px 18px rgba(23, 32, 51, 0.045);
+        box-shadow: 0 6px 18px rgba(23, 32, 51, 0.04);
         margin-bottom: .55rem;
     }
 
@@ -224,7 +227,7 @@ st.markdown(
     }
 
     .medicine-pill {
-        border: 1px solid #d7ecef;
+        border: 1px solid #d9e8f3;
         border-radius: 8px;
         background: var(--saude-soft);
         padding: .42rem .45rem;
@@ -265,7 +268,7 @@ st.markdown(
     }
 
     .medicine-critical .medicine-pill:last-child {
-        background: #fff1f0;
+        background: var(--saude-danger-bg);
         border-color: #f3b8b3;
     }
 
@@ -280,7 +283,7 @@ st.markdown(
 
     div[data-testid="stMetric"] {
         background: var(--saude-soft);
-        border: 1px solid #d7ecef;
+        border: 1px solid #d9e8f3;
         border-radius: 8px;
         padding: .65rem .7rem;
         min-height: 86px;
@@ -310,11 +313,19 @@ st.markdown(
         border-radius: 8px;
         min-height: 2.75rem;
         font-weight: 650;
+        border-color: var(--saude-border);
     }
 
     div.stButton > button[kind="primary"] {
         background: var(--saude-accent);
         border-color: var(--saude-accent);
+    }
+
+    div.stButton > button:hover,
+    div.stDownloadButton > button:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover {
+        border-color: var(--saude-accent);
+        color: var(--saude-accent-strong);
     }
 
     .stAlert {
