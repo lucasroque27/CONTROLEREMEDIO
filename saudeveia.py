@@ -27,31 +27,36 @@ def buscar_dados(tabela):
         return pd.DataFrame(res.json()) if res.status_code == 200 else pd.DataFrame()
     except: return pd.DataFrame()
 
-# --- 2. INTERFACE APP (FOCO EM CELULAR) ---
+# --- 2. CONFIGURAÇÃO DE TELA E CSS ---
 st.set_page_config(page_title="Saúde Rock", layout="centered", initial_sidebar_state="collapsed")
+
+# CSS para forçar colunas lado a lado no celular e reduzir espaços
+st.markdown("""
+    <style>
+    [data-testid="column"] { width: 31% !important; flex: 1 1 31% !important; min-width: 31% !important; }
+    .stMetric { padding: 0px !important; }
+    div.block-container { padding-top: 1rem; }
+    </style>
+    """, unsafe_allow_html=True)
 
 if "autenticado" not in st.session_state: st.session_state.autenticado = False
 if "alertas_enviados" not in st.session_state: st.session_state.alertas_enviados = []
 
-# Menu Lateral apenas para Login
+# Menu Lateral (Login)
 with st.sidebar:
-    st.title("🔒 Login ADM")
+    st.title("🔒 ADM")
     if not st.session_state.autenticado:
         senha = st.text_input("Senha", type="password")
-        if st.button("Entrar", use_container_width=True) or senha == "1234":
+        if st.button("Entrar") or senha == "1234":
             if senha == "1234": st.session_state.autenticado = True; st.rerun()
     else:
-        st.success("Modo Editor Ativo")
-        if st.button("Sair", use_container_width=True):
-            st.session_state.autenticado = False; st.rerun()
+        if st.button("Sair"): st.session_state.autenticado = False; st.rerun()
 
-# Botões de Navegação no Topo (Estilo App)
-st.markdown("<h3 style='text-align: center;'>📱 Minha Saúde</h3>", unsafe_allow_html=True)
-aba = st.radio("Menu", ["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"], 
-               horizontal=True, label_visibility="collapsed")
-st.divider()
+# Menu Superior Compacto
+st.markdown("<h3 style='text-align: center; margin-bottom: 0px;'>🏥 Minha Saúde</h3>", unsafe_allow_html=True)
+aba = st.select_slider("", options=["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"], label_visibility="collapsed")
 
-# --- 3. FUNCIONALIDADES ---
+# --- 3. TELAS ---
 
 if aba == "Estoque":
     df = buscar_dados("remedios")
@@ -65,101 +70,92 @@ if aba == "Estoque":
             resta = float(atual / dose) if dose > 0 else 0
             data_fim = hoje + timedelta(days=resta)
             
-            # Alerta Inteligente (Apenas 7 dias ou fim)
+            # Alerta Telegram
             if 0 < resta <= 7 and r['id'] not in st.session_state.alertas_enviados:
                 enviar_telegram(f"⚠️ {r['nome']} acaba em {int(resta)} dias!")
                 st.session_state.alertas_enviados.append(r['id'])
-            
+
             with st.container(border=True):
                 st.markdown(f"**{r['nome'].upper()}**")
-                c1, c2, c3 = st.columns(3)
+                c1, c2, c3 = st.columns(3) # Forçadas via CSS a ficarem lado a lado
                 c1.metric("Qtd", f"{atual:g}")
                 c2.metric("Dose", f"{dose:g}")
                 c3.metric("Dias", int(resta))
                 
                 if resta > 0:
-                    st.caption(f"📅 Acaba em: {data_fim.strftime('%d/%m/%Y')}")
+                    st.caption(f"📅 Término: {data_fim.strftime('%d/%m/%Y')}")
                 else:
-                    st.error("Acabou!")
+                    st.error("Estoque Zerado")
 
                 if st.session_state.autenticado:
-                    with st.expander("Ajustar"):
-                        v_add = st.number_input("Adicionar Qtd", 0.0, key=f"a_{r['id']}")
-                        v_pago = st.number_input("Preço R$", 0.0, key=f"p_{r['id']}")
-                        if st.button("Salvar", key=f"b_{r['id']}", use_container_width=True):
-                            requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, 
-                                           json={"qtd_total": float(atual+v_add), "data_inicio": hoje.strftime('%Y-%m-%d')})
-                            requests.post(f"{URL_BASE}compras", headers=HEADERS, 
-                                           json={"nome_remedio": r['nome'], "valor": float(v_pago), "data_compra": hoje.strftime('%Y-%m-%d')})
-                            st.cache_data.clear(); st.rerun()
+                    with st.expander("Ajustar Estoque"):
+                        v_add = st.number_input("Qtd Comprada", 0.0, key=f"a_{r['id']}")
+                        v_pago = st.number_input("Valor Pago R$", 0.0, key=f"p_{r['id']}")
+                        if st.button("Salvar Registro", key=f"b_{r['id']}", use_container_width=True):
+                            requests.patch(f"{URL_BASE}remedios?id=eq.{r['id']}", headers=HEADERS, json={"qtd_total": float(atual+v_add), "data_inicio": hoje.strftime('%Y-%m-%d')})
+                            requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio": r['nome'], "valor": float(v_pago), "data_compra": hoje.strftime('%Y-%m-%d')})
+                            st.cache_data.clear(); st.success("Ok!"); time.sleep(1); st.rerun()
 
 elif aba == "Financeiro":
+    st.subheader("💰 Gastos Mensais")
     df_com = buscar_dados("compras")
     df_con = buscar_dados("consultas")
-    if not df_com.empty or not df_con.empty:
-        c1, c2 = st.columns(2)
-        ano = c1.selectbox("Ano", [2025, 2026])
-        mes = c2.selectbox("Mês", list(range(1,13)), index=datetime.now().month-1)
-        
-        # Filtros
-        if not df_com.empty: 
-            df_com['d'] = pd.to_datetime(df_com['data_compra'])
-            f_com = df_com[(df_com['d'].dt.year == ano) & (df_com['d'].dt.month == mes)]
-            gast_r = f_com['valor'].sum()
-        else: gast_r = 0
-            
-        if not df_con.empty:
-            df_con['d'] = pd.to_datetime(df_con['data_consulta'])
-            f_con = df_con[(df_con['d'].dt.year == ano) & (df_con['d'].dt.month == mes)]
-            gast_c = f_con['valor'].sum()
-        else: gast_c = 0
+    
+    col_a, col_m = st.columns(2)
+    ano_sel = col_a.selectbox("Ano", [2025, 2026], index=1)
+    mes_sel = col_m.selectbox("Mês", list(range(1, 13)), index=datetime.now().month - 1)
 
-        st.metric("Total no Mês", f"R$ {gast_r + gast_c:,.2f}")
-        st.write(f"Remédios: R$ {gast_r:,.2f} | Consultas: R$ {gast_c:,.2f}")
-        
-        if st.button("📥 Exportar Planilha (CSV)", use_container_width=True):
-            rel = pd.concat([df_com, df_con], sort=False)
-            csv = rel.to_csv(index=False).encode('utf-8')
-            st.download_button("Baixar Arquivo", csv, "relatorio.csv", "text/csv", use_container_width=True)
+    total_r = 0.0
+    total_c = 0.0
+
+    if not df_com.empty:
+        df_com['data_compra'] = pd.to_datetime(df_com['data_compra'])
+        filtro_r = df_com[(df_com['data_compra'].dt.year == ano_sel) & (df_com['data_compra'].dt.month == mes_sel)]
+        total_r = filtro_r['valor'].sum()
+        if not filtro_r.empty:
+            st.write("**Detalhamento Remédios:**")
+            st.dataframe(filtro_r[['nome_remedio', 'valor', 'data_compra']], hide_index=True)
+
+    if not df_con.empty:
+        df_con['data_consulta'] = pd.to_datetime(df_con['data_consulta'])
+        filtro_c = df_con[(df_con['data_consulta'].dt.year == ano_sel) & (df_con['data_consulta'].dt.month == mes_sel)]
+        total_c = filtro_c['valor'].sum()
+
+    st.divider()
+    st.metric("TOTAL INVESTIDO", f"R$ {total_r + total_c:,.2f}")
+    st.info(f"Remédios: R$ {total_r:,.2f} | Consultas: R$ {total_c:,.2f}")
 
 elif aba == "Consultas":
     df = buscar_dados("consultas")
-    if not df.empty: st.table(df[['data_consulta', 'medico', 'valor']])
+    if not df.empty:
+        st.dataframe(df[['data_consulta', 'medico', 'valor']], hide_index=True, use_container_width=True)
 
 elif aba == "Cadastrar":
     if st.session_state.autenticado:
-        tipo = st.radio("O que cadastrar?", ["Remédio", "Consulta"], horizontal=True)
+        tipo = st.segmented_control("Tipo", ["Remédio", "Consulta"], default="Remédio")
         with st.form("cad"):
             if tipo == "Remédio":
-                n = st.text_input("Nome")
-                q = st.number_input("Qtd")
-                d = st.number_input("Dose/Dia")
-                p = st.number_input("Preço")
+                n, q, d, p = st.text_input("Nome"), st.number_input("Qtd"), st.number_input("Dose/Dia"), st.number_input("Preço")
                 if st.form_submit_button("Salvar", use_container_width=True):
-                    requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome":n, "qtd_total":float(q), "dose_diaria":float(d), "data_inicio":datetime.now().strftime('%Y-%m-%d')})
-                    requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio":n, "valor":float(p), "data_compra":datetime.now().strftime('%Y-%m-%d')})
+                    requests.post(f"{URL_BASE}remedios", headers=HEADERS, json={"nome": n, "qtd_total": float(q), "dose_diaria": float(d), "data_inicio": datetime.now().strftime('%Y-%m-%d')})
+                    requests.post(f"{URL_BASE}compras", headers=HEADERS, json={"nome_remedio": n, "valor": float(p), "data_compra": datetime.now().strftime('%Y-%m-%d')})
                     st.cache_data.clear(); st.rerun()
             else:
-                m = st.text_input("Médico")
-                v = st.number_input("Valor")
+                m, v = st.text_input("Médico"), st.number_input("Valor")
                 if st.form_submit_button("Salvar", use_container_width=True):
-                    requests.post(f"{URL_BASE}consultas", headers=HEADERS, json={"medico":m, "valor":float(v), "data_consulta":datetime.now().strftime('%Y-%m-%d')})
+                    requests.post(f"{URL_BASE}consultas", headers=HEADERS, json={"medico": m, "valor": float(v), "data_consulta": datetime.now().strftime('%Y-%m-%d')})
                     st.cache_data.clear(); st.rerun()
-    else: st.info("Faça login na barra lateral.")
+    else: st.warning("Acesse o menu ADM na lateral.")
 
 elif aba == "Remover":
     if st.session_state.autenticado:
         tab = st.selectbox("Tabela", ["remedios", "consultas", "compras"])
         df_del = buscar_dados(tab)
         if not df_del.empty:
-            col = 'nome' if tab=='remedios' else ('nome_remedio' if tab=='compras' else 'medico')
-            item = st.selectbox("Item", df_del[col].tolist())
-            if st.button("🗑️ APAGAR TUDO", type="primary", use_container_width=True):
-                id_i = df_del[df_del[col] == item]['id'].values[0]
-                if tab == "remedios":
-                    requests.delete(f"{URL_BASE}remedios?id=eq.{id_i}", headers=HEADERS)
-                    requests.delete(f"{URL_BASE}compras?nome_remedio=eq.{item}", headers=HEADERS)
-                else:
-                    requests.delete(f"{URL_BASE}{tab}?id=eq.{id_i}", headers=HEADERS)
+            c = 'nome' if tab == 'remedios' else ('nome_remedio' if tab == 'compras' else 'medico')
+            item = st.selectbox("Item", df_del[c].tolist())
+            if st.button("🗑️ APAGAR", type="primary", use_container_width=True):
+                id_i = df_del[df_del[c] == item]['id'].values[0]
+                requests.delete(f"{URL_BASE}{tab}?id=eq.{id_i}", headers=HEADERS)
+                if tab == "remedios": requests.delete(f"{URL_BASE}compras?nome_remedio=eq.{item}", headers=HEADERS)
                 st.cache_data.clear(); st.rerun()
-    else: st.info("Faça login na barra lateral.")
