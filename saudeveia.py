@@ -102,14 +102,17 @@ st.markdown(
     """
     <style>
     :root {
-        --saude-bg: #f6f8fb;
+        --saude-bg: #f4f7fa;
         --saude-card: #ffffff;
-        --saude-text: #18202f;
-        --saude-muted: #5c6678;
-        --saude-border: #dfe5ef;
-        --saude-accent: #1976d2;
-        --saude-soft: #eef5ff;
+        --saude-text: #172033;
+        --saude-muted: #627084;
+        --saude-border: #d8e0ea;
+        --saude-accent: #0f6e8c;
+        --saude-accent-strong: #0a5570;
+        --saude-soft: #edf7f9;
         --saude-danger: #b42318;
+        --saude-warning: #a15c07;
+        --saude-warning-bg: #fff7e8;
     }
 
     html, body, [data-testid="stAppViewContainer"] {
@@ -118,8 +121,9 @@ st.markdown(
     }
 
     [data-testid="stHeader"] {
-        background: rgba(246, 248, 251, 0.92);
+        background: rgba(244, 247, 250, 0.94);
         backdrop-filter: blur(8px);
+        border-bottom: 1px solid rgba(216, 224, 234, .8);
     }
 
     div.block-container {
@@ -146,7 +150,7 @@ st.markdown(
 
     .app-subtitle {
         text-align: center;
-        margin: 0 0 1rem;
+        margin: 0 0 .9rem;
         color: var(--saude-muted);
         font-size: .9rem;
         line-height: 1.35;
@@ -171,18 +175,19 @@ st.markdown(
     }
 
     div[data-testid="stSegmentedControl"] label {
-        min-height: 2.35rem;
+        min-height: 2.3rem;
         border-radius: 8px;
         white-space: nowrap;
-        font-weight: 700;
+        font-weight: 650;
         flex: 0 0 auto;
+        border-color: var(--saude-border);
     }
 
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border: 1px solid var(--saude-border);
         border-radius: 10px;
         background: var(--saude-card);
-        box-shadow: 0 8px 20px rgba(24, 32, 47, 0.05);
+        box-shadow: 0 6px 18px rgba(23, 32, 51, 0.045);
         margin-bottom: .55rem;
     }
 
@@ -192,6 +197,8 @@ st.markdown(
         gap: .45rem;
         align-items: stretch;
         width: 100%;
+        border-left: 3px solid var(--saude-accent);
+        padding-left: .55rem;
     }
 
     .medicine-name {
@@ -203,7 +210,7 @@ st.markdown(
     }
 
     .medicine-title {
-        font-weight: 800;
+        font-weight: 780;
         font-size: .94rem;
         color: var(--saude-text);
         line-height: 1.2;
@@ -217,7 +224,7 @@ st.markdown(
     }
 
     .medicine-pill {
-        border: 1px solid #d8e8ff;
+        border: 1px solid #d7ecef;
         border-radius: 8px;
         background: var(--saude-soft);
         padding: .42rem .45rem;
@@ -233,20 +240,47 @@ st.markdown(
 
     .medicine-value {
         color: var(--saude-text);
-        font-weight: 800;
+        font-weight: 760;
         font-size: .98rem;
         line-height: 1.05;
         overflow-wrap: anywhere;
     }
 
+    .medicine-warning {
+        border-left-color: var(--saude-warning);
+    }
+
+    .medicine-warning .medicine-pill:last-child {
+        background: var(--saude-warning-bg);
+        border-color: #f4d7a1;
+    }
+
+    .medicine-warning .medicine-pill:last-child .medicine-value,
+    .medicine-warning .medicine-date {
+        color: var(--saude-warning);
+    }
+
+    .medicine-critical {
+        border-left-color: var(--saude-danger);
+    }
+
+    .medicine-critical .medicine-pill:last-child {
+        background: #fff1f0;
+        border-color: #f3b8b3;
+    }
+
+    .medicine-critical .medicine-pill:last-child .medicine-value {
+        color: var(--saude-danger);
+    }
+
     .medicine-empty {
         color: var(--saude-danger);
-        font-weight: 800;
+        font-weight: 760;
     }
 
     div[data-testid="stMetric"] {
         background: var(--saude-soft);
-        border: 1px solid #d8e8ff;
+        border: 1px solid #d7ecef;
         border-radius: 8px;
         padding: .65rem .7rem;
         min-height: 86px;
@@ -275,7 +309,12 @@ st.markdown(
     div[data-testid="stFormSubmitButton"] > button {
         border-radius: 8px;
         min-height: 2.75rem;
-        font-weight: 700;
+        font-weight: 650;
+    }
+
+    div.stButton > button[kind="primary"] {
+        background: var(--saude-accent);
+        border-color: var(--saude-accent);
     }
 
     .stAlert {
@@ -324,6 +363,7 @@ st.markdown(
         .medicine-card {
             grid-template-columns: minmax(86px, 1.35fr) repeat(3, minmax(52px, .7fr));
             gap: .35rem;
+            padding-left: .45rem;
         }
 
         .medicine-title {
@@ -404,16 +444,19 @@ if aba == "Estoque":
                 if dose <= 0:
                     status_texto = "Dose inválida"
                     status_classe = "medicine-empty"
+                    card_classe = "medicine-critical"
                 elif resta > 0:
                     status_texto = f"Término: {data_fim.strftime('%d/%m/%Y')}"
                     status_classe = ""
+                    card_classe = "medicine-warning" if resta <= 7 else ""
                 else:
                     status_texto = "Estoque zerado"
                     status_classe = "medicine-empty"
+                    card_classe = "medicine-critical"
 
                 st.markdown(
                     f"""
-                    <div class="medicine-card">
+                    <div class="medicine-card {card_classe}">
                         <div class="medicine-name">
                             <div class="medicine-title">{escape(str(r['nome']).upper())}</div>
                             <div class="medicine-date {status_classe}">{status_texto}</div>
@@ -461,6 +504,14 @@ if aba == "Estoque":
                                     "valor": float(v_pago),
                                     "data_compra": hoje.strftime("%Y-%m-%d"),
                                 },
+                            )
+                            enviar_telegram(
+                                "✅ Estoque atualizado\n"
+                                f"Remédio: {r['nome']}\n"
+                                f"Qtd comprada: {v_add:g}\n"
+                                f"Estoque atual: {atual + v_add:g}\n"
+                                f"Dias estimados: {int((atual + v_add) / dose) if dose > 0 else 0}\n"
+                                f"Valor pago: R$ {v_pago:,.2f}"
                             )
                             st.cache_data.clear()
                             avisar_sucesso("Estoque atualizado com sucesso.")
