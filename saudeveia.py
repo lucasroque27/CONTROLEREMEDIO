@@ -1,12 +1,20 @@
-import streamlit as st
-import pandas as pd
-import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 from html import escape
 
-# --- 1. CONFIGURAÇÕES ---
+import pandas as pd
+import requests
+import streamlit as st
+
+import saude_core as core
+
+
+# --- 1. CONFIGURACOES ---
 URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
 API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
+TELEGRAM_BOT_TOKEN = "8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM"
+TELEGRAM_CHAT_ID = "5256921022"
+APP_PASSWORD = "1234"
+
 HEADERS = {
     "apikey": API_KEY,
     "Authorization": f"Bearer {API_KEY}",
@@ -16,10 +24,13 @@ HEADERS = {
 
 
 def enviar_telegram(msg):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+
     try:
         res = requests.post(
-            "https://api.telegram.org/bot8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM/sendMessage",
-            json={"chat_id": "5256921022", "text": msg},
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
             timeout=5,
         )
         return res.status_code == 200
@@ -28,6 +39,10 @@ def enviar_telegram(msg):
 
 
 def requisicao_supabase(metodo, tabela, erro_contexto, **kwargs):
+    if not API_KEY:
+        st.error("Configure SUPABASE_API_KEY em .streamlit/secrets.toml.")
+        return False
+
     try:
         res = requests.request(
             metodo,
@@ -38,19 +53,18 @@ def requisicao_supabase(metodo, tabela, erro_contexto, **kwargs):
         )
         if 200 <= res.status_code < 300:
             return True
-        st.error(f"{erro_contexto}. Código: {res.status_code}. Resposta: {res.text[:180]}")
+        st.error(f"{erro_contexto}. Codigo: {res.status_code}. Resposta: {res.text[:180]}")
         return False
     except Exception as exc:
         st.error(f"{erro_contexto}. Detalhe: {exc}")
         return False
 
 
-def texto_normalizado(valor):
-    return str(valor or "").strip().casefold()
-
-
 @st.cache_data(ttl=1)
 def buscar_dados(tabela):
+    if not API_KEY:
+        return pd.DataFrame()
+
     try:
         res = requests.get(f"{URL_BASE}{tabela}?select=*", headers=HEADERS, timeout=10)
         return pd.DataFrame(res.json()) if res.status_code == 200 else pd.DataFrame()
@@ -72,54 +86,9 @@ def mostrar_mensagem_sucesso():
         st.success(mensagem)
 
 
-def montar_gastos_unificados(df_com, df_con):
-    registros = []
-
-    if not df_com.empty:
-        compras = df_com.copy()
-        compras["data_compra"] = pd.to_datetime(compras["data_compra"], errors="coerce")
-        for _, item in compras.iterrows():
-            registros.append(
-                {
-                    "data": item["data_compra"],
-                    "mes_ano": "",
-                    "tipo": "Remédio",
-                    "descricao": item.get("nome_remedio", ""),
-                    "valor": float(item.get("valor", 0) or 0),
-                    "origem": "compras",
-                    "id_origem": item.get("id", ""),
-                }
-            )
-
-    if not df_con.empty:
-        consultas = df_con.copy()
-        consultas["data_consulta"] = pd.to_datetime(consultas["data_consulta"], errors="coerce")
-        for _, item in consultas.iterrows():
-            registros.append(
-                {
-                    "data": item["data_consulta"],
-                    "mes_ano": "",
-                    "tipo": "Consulta",
-                    "descricao": item.get("medico", ""),
-                    "valor": float(item.get("valor", 0) or 0),
-                    "origem": "consultas",
-                    "id_origem": item.get("id", ""),
-                }
-            )
-
-    colunas = ["data", "mes_ano", "tipo", "descricao", "valor", "origem", "id_origem"]
-    df_gastos = pd.DataFrame(registros, columns=colunas)
-    if not df_gastos.empty:
-        df_gastos = df_gastos.dropna(subset=["data"]).sort_values("data", ascending=False)
-        df_gastos["mes_ano"] = df_gastos["data"].dt.strftime("%Y-%m")
-        df_gastos["data"] = df_gastos["data"].dt.strftime("%Y-%m-%d")
-
-    return df_gastos
-
-
-# --- 2. CONFIGURAÇÃO DE TELA E CSS ---
+# --- 2. CONFIGURACAO DE TELA E CSS ---
 st.set_page_config(
-    page_title="Saúde Rock",
+    page_title="Saude Rock",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
@@ -845,213 +814,212 @@ if "autenticado" not in st.session_state:
 if "alertas_enviados" not in st.session_state:
     st.session_state.alertas_enviados = []
 
-# Menu Lateral (Login)
-with st.sidebar:
-    st.title("🔒 ADM")
-    if not st.session_state.autenticado:
-        senha = st.text_input("Senha", type="password")
-        if st.button("Entrar") or senha == "1234":
-            if senha == "1234":
-                st.session_state.autenticado = True
+def renderizar_menu_lateral():
+    with st.sidebar:
+        st.title("ADM")
+        if not st.session_state.autenticado:
+            senha = st.text_input("Senha", type="password")
+            if st.button("Entrar") or senha == APP_PASSWORD:
+                if senha == APP_PASSWORD:
+                    st.session_state.autenticado = True
+                    st.rerun()
+        else:
+            st.selectbox("Tema visual", list(PALETAS.keys()), key="tema_visual")
+            if st.button("Sair"):
+                st.session_state.autenticado = False
                 st.rerun()
-    else:
-        st.selectbox("Tema visual", list(PALETAS.keys()), key="tema_visual")
-        if st.button("Sair"):
-            st.session_state.autenticado = False
+
+
+def renderizar_topo():
+    st.markdown("<h3 class='app-title'>Minha Saude</h3>", unsafe_allow_html=True)
+    st.markdown("<p class='app-subtitle'>Controle de remedios, consultas e gastos</p>", unsafe_allow_html=True)
+    return st.segmented_control(
+        "Menu",
+        options=["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"],
+        default="Estoque",
+        label_visibility="collapsed",
+    )
+
+
+def renderizar_alerta_estoque(remedio, estoque):
+    alerta_ja_enviado = bool(remedio.get(core.COL_ALERTA_ENVIADO, False))
+    remedio_id = remedio.get(core.COL_ID)
+
+    if (
+        0 < estoque["resta"] <= 7
+        and not alerta_ja_enviado
+        and remedio_id not in st.session_state.alertas_enviados
+    ):
+        telegram_ok = enviar_telegram(
+            f"{remedio[core.COL_NOME]} acaba em {int(estoque['resta'])} dias!"
+        )
+        st.session_state.alertas_enviados.append(remedio_id)
+        if telegram_ok:
+            requisicao_supabase(
+                "PATCH",
+                f"{core.TABELA_REMEDIOS}?id=eq.{remedio_id}",
+                "Alerta enviado, mas nao foi possivel marcar como enviado no banco",
+                json={core.COL_ALERTA_ENVIADO: True},
+            )
+            st.cache_data.clear()
+        else:
+            st.warning(f"Nao foi possivel enviar o alerta do Telegram para {remedio[core.COL_NOME]}.")
+
+
+def renderizar_card_estoque(remedio, estoque):
+    st.markdown(
+        f"""
+        <div class="medicine-card {estoque['card_classe']}">
+            <div class="medicine-name">
+                <div class="medicine-title">{escape(str(remedio[core.COL_NOME]).upper())}</div>
+                <div class="medicine-status">{estoque['status_nome']}</div>
+                <div class="medicine-date {estoque['status_classe']}">{estoque['status_texto']}</div>
+            </div>
+            <div class="medicine-pill">
+                <div class="medicine-label">Qtd</div>
+                <div class="medicine-value">{estoque['atual']:g}</div>
+            </div>
+            <div class="medicine-pill">
+                <div class="medicine-label">Dose</div>
+                <div class="medicine-value">{estoque['dose']:g}</div>
+            </div>
+            <div class="medicine-pill">
+                <div class="medicine-label">Dias</div>
+                <div class="medicine-value">{int(estoque['resta'])}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def renderizar_ajuste_estoque(remedio, estoque, hoje):
+    if not st.session_state.autenticado:
+        return
+
+    remedio_id = remedio[core.COL_ID]
+    with st.expander("Ajustar Estoque"):
+        v_add = st.number_input("Qtd Comprada", 0.0, key=f"a_{remedio_id}")
+        v_pago = st.number_input("Valor Pago R$", 0.0, key=f"p_{remedio_id}")
+        data_compra = st.date_input("Data da compra", value=hoje.date(), key=f"d_{remedio_id}")
+        if st.button("Salvar Registro", key=f"b_{remedio_id}", use_container_width=True):
+            if v_add <= 0:
+                st.error("Informe uma quantidade comprada maior que zero.")
+                st.stop()
+            if v_pago < 0:
+                st.error("O valor pago nao pode ser negativo.")
+                st.stop()
+
+            ok_estoque = requisicao_supabase(
+                "PATCH",
+                f"{core.TABELA_REMEDIOS}?id=eq.{remedio_id}",
+                "Nao foi possivel atualizar o estoque",
+                json={
+                    core.COL_QTD_TOTAL: float(estoque["atual"] + v_add),
+                    core.COL_DATA_INICIO: hoje.strftime("%Y-%m-%d"),
+                    core.COL_ALERTA_ENVIADO: False,
+                },
+            )
+            if not ok_estoque:
+                st.stop()
+
+            ok_compra = requisicao_supabase(
+                "POST",
+                core.TABELA_COMPRAS,
+                "Estoque atualizado, mas nao foi possivel registrar a compra",
+                json={
+                    core.COL_NOME_REMEDIO: remedio[core.COL_NOME],
+                    core.COL_VALOR: float(v_pago),
+                    core.COL_DATA_COMPRA: core.data_iso(data_compra),
+                },
+            )
+            if not ok_compra:
+                st.stop()
+
+            telegram_ok = enviar_telegram(
+                "Estoque atualizado\n"
+                f"Remedio: {remedio[core.COL_NOME]}\n"
+                f"Qtd comprada: {v_add:g}\n"
+                f"Estoque atual: {estoque['atual'] + v_add:g}\n"
+                f"Dias estimados: {int((estoque['atual'] + v_add) / estoque['dose']) if estoque['dose'] > 0 else 0}\n"
+                f"Valor pago: {core.formatar_moeda_br(v_pago)}"
+            )
+            if not telegram_ok:
+                st.warning("Estoque salvo, mas nao foi possivel enviar o alerta no Telegram.")
+            st.cache_data.clear()
+            avisar_sucesso("Estoque atualizado com sucesso.")
             st.rerun()
 
-# Menu Superior Compacto
-st.markdown("<h3 class='app-title'>Minha Saúde</h3>", unsafe_allow_html=True)
-st.markdown("<p class='app-subtitle'>Controle de remédios, consultas e gastos</p>", unsafe_allow_html=True)
-aba = st.segmented_control(
-    "Menu",
-    options=["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"],
-    default="Estoque",
-    label_visibility="collapsed",
-)
-mostrar_mensagem_sucesso()
 
-# --- 3. TELAS ---
+def tela_estoque():
+    df = buscar_dados(core.TABELA_REMEDIOS)
+    if df.empty:
+        st.info("Nenhum remedio cadastrado ainda.")
+        return
 
-if aba == "Estoque":
-    df = buscar_dados("remedios")
-    if not df.empty:
-        hoje = datetime.now()
-        for _, r in df.iterrows():
-            ini = pd.to_datetime(r["data_inicio"])
-            passados = (hoje - ini).days
-            dose = float(r["dose_diaria"])
-            atual = max(0.0, float(r["qtd_total"]) - (passados * dose))
-            resta = float(atual / dose) if dose > 0 else 0
-            data_fim = hoje + timedelta(days=resta)
-            alerta_ja_enviado = bool(r.get("alerta_enviado", False))
+    hoje = datetime.now()
+    remedios_ordenados = []
+    for _, remedio in df.iterrows():
+        estoque = core.calcular_estoque(remedio, hoje)
+        nome_ordem = core.texto_normalizado(remedio.get(core.COL_NOME, ""))
+        remedios_ordenados.append((estoque["prioridade"], nome_ordem, remedio, estoque))
 
-            # Alerta Telegram
-            if (
-                0 < resta <= 7
-                and not alerta_ja_enviado
-                and r["id"] not in st.session_state.alertas_enviados
-            ):
-                telegram_ok = enviar_telegram(f"⚠️ {r['nome']} acaba em {int(resta)} dias!")
-                st.session_state.alertas_enviados.append(r["id"])
-                if telegram_ok:
-                    requisicao_supabase(
-                        "PATCH",
-                        f"remedios?id=eq.{r['id']}",
-                        "Alerta enviado, mas não foi possível marcar como enviado no banco",
-                        json={"alerta_enviado": True},
-                    )
-                    st.cache_data.clear()
-                else:
-                    st.warning(f"Não foi possível enviar o alerta do Telegram para {r['nome']}.")
+    for _, _, remedio, estoque in sorted(remedios_ordenados, key=lambda item: (item[0], item[1])):
+        renderizar_alerta_estoque(remedio, estoque)
+        with st.container(border=True):
+            renderizar_card_estoque(remedio, estoque)
 
-            with st.container(border=True):
-                if dose <= 0:
-                    status_nome = "Dose inválida"
-                    status_texto = ""
-                    status_classe = "medicine-empty"
-                    card_classe = "medicine-critical"
-                elif resta > 0:
-                    if resta <= 3:
-                        status_nome = "Crítico"
-                        card_classe = "medicine-critical"
-                        status_classe = "medicine-empty"
-                    elif resta <= 7:
-                        status_nome = "Atenção"
-                        card_classe = "medicine-warning"
-                        status_classe = ""
-                    else:
-                        status_nome = "Normal"
-                        card_classe = ""
-                        status_classe = ""
-                    status_texto = f"Término: {data_fim.strftime('%d/%m/%Y')}"
-                else:
-                    status_nome = "Zerado"
-                    status_texto = "Estoque zerado"
-                    status_classe = "medicine-empty"
-                    card_classe = "medicine-critical"
+            if estoque["dose"] <= 0:
+                st.warning("Dose diaria precisa ser maior que zero.")
+            elif estoque["resta"] <= 0:
+                st.error("Estoque Zerado")
 
-                st.markdown(
-                    f"""
-                    <div class="medicine-card {card_classe}">
-                        <div class="medicine-name">
-                            <div class="medicine-title">{escape(str(r['nome']).upper())}</div>
-                            <div class="medicine-status">{status_nome}</div>
-                            <div class="medicine-date {status_classe}">{status_texto}</div>
-                        </div>
-                        <div class="medicine-pill">
-                            <div class="medicine-label">Qtd</div>
-                            <div class="medicine-value">{atual:g}</div>
-                        </div>
-                        <div class="medicine-pill">
-                            <div class="medicine-label">Dose</div>
-                            <div class="medicine-value">{dose:g}</div>
-                        </div>
-                        <div class="medicine-pill">
-                            <div class="medicine-label">Dias</div>
-                            <div class="medicine-value">{int(resta)}</div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+            renderizar_ajuste_estoque(remedio, estoque, hoje)
 
-                if dose <= 0:
-                    st.warning("Dose diária precisa ser maior que zero.")
-                elif resta <= 0:
-                    st.error("Estoque Zerado")
 
-                if st.session_state.autenticado:
-                    with st.expander("Ajustar Estoque"):
-                        v_add = st.number_input("Qtd Comprada", 0.0, key=f"a_{r['id']}")
-                        v_pago = st.number_input("Valor Pago R$", 0.0, key=f"p_{r['id']}")
-                        if st.button("Salvar Registro", key=f"b_{r['id']}", use_container_width=True):
-                            if v_add <= 0:
-                                st.error("Informe uma quantidade comprada maior que zero.")
-                                st.stop()
-                            if v_pago < 0:
-                                st.error("O valor pago não pode ser negativo.")
-                                st.stop()
+def tela_financeiro():
+    st.subheader("Gastos Mensais")
+    df_com = buscar_dados(core.TABELA_COMPRAS)
+    df_con = buscar_dados(core.TABELA_CONSULTAS)
+    df_gastos = core.montar_gastos_unificados(df_com, df_con)
 
-                            ok_estoque = requisicao_supabase(
-                                "PATCH",
-                                f"remedios?id=eq.{r['id']}",
-                                "Não foi possível atualizar o estoque",
-                                json={
-                                    "qtd_total": float(atual + v_add),
-                                    "data_inicio": hoje.strftime("%Y-%m-%d"),
-                                    "alerta_enviado": False,
-                                },
-                            )
-                            if not ok_estoque:
-                                st.stop()
-
-                            ok_compra = requisicao_supabase(
-                                "POST",
-                                "compras",
-                                "Estoque atualizado, mas não foi possível registrar a compra",
-                                json={
-                                    "nome_remedio": r["nome"],
-                                    "valor": float(v_pago),
-                                    "data_compra": hoje.strftime("%Y-%m-%d"),
-                                },
-                            )
-                            if not ok_compra:
-                                st.stop()
-
-                            telegram_ok = enviar_telegram(
-                                "✅ Estoque atualizado\n"
-                                f"Remédio: {r['nome']}\n"
-                                f"Qtd comprada: {v_add:g}\n"
-                                f"Estoque atual: {atual + v_add:g}\n"
-                                f"Dias estimados: {int((atual + v_add) / dose) if dose > 0 else 0}\n"
-                                f"Valor pago: R$ {v_pago:,.2f}"
-                            )
-                            if not telegram_ok:
-                                st.warning("Estoque salvo, mas não foi possível enviar o alerta no Telegram.")
-                            st.cache_data.clear()
-                            avisar_sucesso("Estoque atualizado com sucesso.")
-                            st.rerun()
-    else:
-        st.info("Nenhum remédio cadastrado ainda.")
-
-elif aba == "Financeiro":
-    st.subheader("💰 Gastos Mensais")
-    df_com = buscar_dados("compras")
-    df_con = buscar_dados("consultas")
-    df_gastos = montar_gastos_unificados(df_com, df_con)
+    ano_atual = datetime.now().year
+    anos = core.anos_disponiveis(df_gastos, ano_atual)
+    indice_ano = anos.index(ano_atual) if ano_atual in anos else len(anos) - 1
+    opcoes_mes = ["Todos"] + [f"{numero:02d} - {nome}" for numero, nome in core.MESES.items()]
 
     col_a, col_m = st.columns(2)
-    ano_sel = col_a.selectbox("Ano", [2025, 2026], index=1)
-    mes_sel = col_m.selectbox("Mês", list(range(1, 13)), index=datetime.now().month - 1)
+    ano_sel = col_a.selectbox("Ano", anos, index=indice_ano)
+    mes_rotulo = col_m.selectbox("Mes", opcoes_mes, index=0)
+    mes_sel = None if mes_rotulo == "Todos" else int(mes_rotulo.split(" - ")[0])
 
-    total_r = 0.0
-    total_c = 0.0
-    filtro_mes = pd.DataFrame()
+    filtro_mes = core.filtrar_gastos(df_gastos, ano_sel, mes_sel)
+    df_ano = core.filtrar_gastos(df_gastos, ano_sel)
+    total_r, total_c = core.totais_por_tipo(filtro_mes)
 
-    if not df_gastos.empty:
-        datas_gastos = pd.to_datetime(df_gastos["data"], errors="coerce")
-        filtro_mes = df_gastos[
-            (datas_gastos.dt.year == ano_sel)
-            & (datas_gastos.dt.month == mes_sel)
-        ].copy()
+    resumo = core.resumo_mensal(df_ano)
+    if not resumo.empty:
+        st.write("**Resumo por mes:**")
+        st.bar_chart(resumo.set_index("mes_ano")[[core.TIPO_REMEDIO, core.TIPO_CONSULTA]])
 
-        total_r = filtro_mes.loc[filtro_mes["tipo"] == "Remédio", "valor"].sum()
-        total_c = filtro_mes.loc[filtro_mes["tipo"] == "Consulta", "valor"].sum()
+        resumo_visual = resumo.copy()
+        for coluna in [core.TIPO_REMEDIO, core.TIPO_CONSULTA, "Total"]:
+            resumo_visual[coluna] = resumo_visual[coluna].map(core.formatar_moeda_br)
+        st.dataframe(resumo_visual, hide_index=True, use_container_width=True)
 
-        if not filtro_mes.empty:
-            st.write("**Detalhamento unificado:**")
-            st.dataframe(
-                filtro_mes[["data", "mes_ano", "tipo", "descricao", "valor"]],
-                hide_index=True,
-                use_container_width=True,
-            )
-        else:
-            st.info("Nenhum gasto encontrado para esse mês.")
+    if not filtro_mes.empty:
+        st.write("**Detalhamento unificado:**")
+        df_visual = core.dataframe_com_moeda(filtro_mes[core.COLUNAS_GASTOS_VISIVEIS])
+        st.dataframe(df_visual, hide_index=True, use_container_width=True)
+    else:
+        st.info("Nenhum gasto encontrado para esse filtro.")
 
     st.divider()
-    st.metric("TOTAL INVESTIDO", f"R$ {total_r + total_c:,.2f}")
-    st.info(f"Remédios: R$ {total_r:,.2f} | Consultas: R$ {total_c:,.2f}")
+    st.metric("TOTAL INVESTIDO", core.formatar_moeda_br(total_r + total_c))
+    st.info(
+        f"Remedios: {core.formatar_moeda_br(total_r)} | "
+        f"Consultas: {core.formatar_moeda_br(total_c)}"
+    )
     if not df_gastos.empty:
         st.download_button(
             "Baixar planilha unificada",
@@ -1061,160 +1029,209 @@ elif aba == "Financeiro":
             use_container_width=True,
         )
     else:
-        st.info("Ainda não há dados financeiros para baixar.")
+        st.info("Ainda nao ha dados financeiros para baixar.")
 
-elif aba == "Consultas":
-    df = buscar_dados("consultas")
-    if not df.empty:
-        colunas_consulta = ["data_consulta", "medico", "valor"]
-        df_consultas = df[colunas_consulta].copy()
-        st.dataframe(df_consultas, hide_index=True, use_container_width=True)
-        st.download_button(
-            "Baixar planilha de consultas",
-            data=dataframe_para_csv(df_consultas),
-            file_name="consultas.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-    else:
+
+def tela_consultas():
+    df = buscar_dados(core.TABELA_CONSULTAS)
+    if df.empty:
         st.info("Nenhuma consulta cadastrada ainda.")
+        return
 
-elif aba == "Cadastrar":
-    if st.session_state.autenticado:
-        tipo = st.segmented_control("Tipo", ["Remédio", "Consulta"], default="Remédio")
-        with st.form("cad"):
-            if tipo == "Remédio":
-                n = st.text_input("Nome")
-                q = st.number_input("Qtd")
-                d = st.number_input("Dose/Dia")
-                p = st.number_input("Preço")
-                if st.form_submit_button("Salvar", use_container_width=True):
-                    nome_limpo = n.strip()
-                    if not nome_limpo:
-                        st.error("Informe o nome do remédio.")
-                        st.stop()
-                    if q <= 0:
-                        st.error("Informe uma quantidade maior que zero.")
-                        st.stop()
-                    if d <= 0:
-                        st.error("Informe uma dose por dia maior que zero.")
-                        st.stop()
-                    if p < 0:
-                        st.error("O preço não pode ser negativo.")
-                        st.stop()
+    df_consultas = df[core.COLUNAS_CONSULTA_VISIVEIS].copy()
+    st.dataframe(core.dataframe_com_moeda(df_consultas), hide_index=True, use_container_width=True)
+    st.download_button(
+        "Baixar planilha de consultas",
+        data=dataframe_para_csv(df_consultas),
+        file_name="consultas.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
 
-                    df_remedios = buscar_dados("remedios")
-                    if not df_remedios.empty and "nome" in df_remedios:
-                        nomes_existentes = df_remedios["nome"].map(texto_normalizado)
-                        if texto_normalizado(nome_limpo) in set(nomes_existentes):
-                            st.error("Já existe um remédio cadastrado com esse nome.")
-                            st.stop()
 
-                    ok_remedio = requisicao_supabase(
-                        "POST",
-                        "remedios",
-                        "Não foi possível cadastrar o remédio",
-                        json={
-                            "nome": nome_limpo,
-                            "qtd_total": float(q),
-                            "dose_diaria": float(d),
-                            "data_inicio": datetime.now().strftime("%Y-%m-%d"),
-                            "alerta_enviado": False,
-                        },
-                    )
-                    if not ok_remedio:
-                        st.stop()
+def cadastrar_remedio():
+    n = st.text_input("Nome")
+    q = st.number_input("Qtd")
+    d = st.number_input("Dose/Dia")
+    p = st.number_input("Preco")
+    data_compra = st.date_input("Data da compra", value=datetime.now().date())
 
-                    ok_compra = requisicao_supabase(
-                        "POST",
-                        "compras",
-                        "Remédio cadastrado, mas não foi possível registrar a compra",
-                        json={
-                            "nome_remedio": nome_limpo,
-                            "valor": float(p),
-                            "data_compra": datetime.now().strftime("%Y-%m-%d"),
-                        },
-                    )
-                    if not ok_compra:
-                        st.stop()
-                    st.cache_data.clear()
-                    avisar_sucesso("Remédio cadastrado com sucesso.")
-                    st.rerun()
-            else:
-                m = st.text_input("Médico")
-                v = st.number_input("Valor")
-                if st.form_submit_button("Salvar", use_container_width=True):
-                    medico_limpo = m.strip()
-                    hoje_str = datetime.now().strftime("%Y-%m-%d")
-                    if not medico_limpo:
-                        st.error("Informe o médico ou descrição da consulta.")
-                        st.stop()
-                    if v <= 0:
-                        st.error("Informe um valor maior que zero.")
-                        st.stop()
+    if not st.form_submit_button("Salvar", use_container_width=True):
+        return
 
-                    df_consultas = buscar_dados("consultas")
-                    if not df_consultas.empty:
-                        consultas = df_consultas.copy()
-                        consultas["data_consulta"] = pd.to_datetime(
-                            consultas["data_consulta"], errors="coerce"
-                        ).dt.strftime("%Y-%m-%d")
-                        consultas["valor"] = pd.to_numeric(consultas["valor"], errors="coerce")
-                        duplicada = consultas[
-                            (consultas["medico"].map(texto_normalizado) == texto_normalizado(medico_limpo))
-                            & (consultas["data_consulta"] == hoje_str)
-                            & (consultas["valor"] == float(v))
-                        ]
-                        if not duplicada.empty:
-                            st.error("Essa consulta já foi cadastrada hoje com o mesmo valor.")
-                            st.stop()
+    nome_limpo = n.strip()
+    if not nome_limpo:
+        st.error("Informe o nome do remedio.")
+        st.stop()
+    if q <= 0:
+        st.error("Informe uma quantidade maior que zero.")
+        st.stop()
+    if d <= 0:
+        st.error("Informe uma dose por dia maior que zero.")
+        st.stop()
+    if p < 0:
+        st.error("O preco nao pode ser negativo.")
+        st.stop()
 
-                    ok_consulta = requisicao_supabase(
-                        "POST",
-                        "consultas",
-                        "Não foi possível cadastrar a consulta",
-                        json={
-                            "medico": medico_limpo,
-                            "valor": float(v),
-                            "data_consulta": hoje_str,
-                        },
-                    )
-                    if not ok_consulta:
-                        st.stop()
-                    st.cache_data.clear()
-                    avisar_sucesso("Consulta cadastrada com sucesso.")
-                    st.rerun()
-    else:
+    df_remedios = buscar_dados(core.TABELA_REMEDIOS)
+    if not df_remedios.empty and core.COL_NOME in df_remedios:
+        nomes_existentes = df_remedios[core.COL_NOME].map(core.texto_normalizado)
+        if core.texto_normalizado(nome_limpo) in set(nomes_existentes):
+            st.error("Ja existe um remedio cadastrado com esse nome.")
+            st.stop()
+
+    ok_remedio = requisicao_supabase(
+        "POST",
+        core.TABELA_REMEDIOS,
+        "Nao foi possivel cadastrar o remedio",
+        json={
+            core.COL_NOME: nome_limpo,
+            core.COL_QTD_TOTAL: float(q),
+            core.COL_DOSE_DIARIA: float(d),
+            core.COL_DATA_INICIO: datetime.now().strftime("%Y-%m-%d"),
+            core.COL_ALERTA_ENVIADO: False,
+        },
+    )
+    if not ok_remedio:
+        st.stop()
+
+    ok_compra = requisicao_supabase(
+        "POST",
+        core.TABELA_COMPRAS,
+        "Remedio cadastrado, mas nao foi possivel registrar a compra",
+        json={
+            core.COL_NOME_REMEDIO: nome_limpo,
+            core.COL_VALOR: float(p),
+            core.COL_DATA_COMPRA: core.data_iso(data_compra),
+        },
+    )
+    if not ok_compra:
+        st.stop()
+    st.cache_data.clear()
+    avisar_sucesso("Remedio cadastrado com sucesso.")
+    st.rerun()
+
+
+def cadastrar_consulta():
+    m = st.text_input("Medico")
+    v = st.number_input("Valor")
+    data_consulta = st.date_input("Data da consulta", value=datetime.now().date())
+
+    if not st.form_submit_button("Salvar", use_container_width=True):
+        return
+
+    medico_limpo = m.strip()
+    data_consulta_str = core.data_iso(data_consulta)
+    if not medico_limpo:
+        st.error("Informe o medico ou descricao da consulta.")
+        st.stop()
+    if v <= 0:
+        st.error("Informe um valor maior que zero.")
+        st.stop()
+
+    df_consultas = buscar_dados(core.TABELA_CONSULTAS)
+    if not df_consultas.empty:
+        consultas = df_consultas.copy()
+        consultas[core.COL_DATA_CONSULTA] = pd.to_datetime(
+            consultas[core.COL_DATA_CONSULTA], errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
+        consultas[core.COL_VALOR] = pd.to_numeric(consultas[core.COL_VALOR], errors="coerce")
+        duplicada = consultas[
+            (consultas[core.COL_MEDICO].map(core.texto_normalizado) == core.texto_normalizado(medico_limpo))
+            & (consultas[core.COL_DATA_CONSULTA] == data_consulta_str)
+            & (consultas[core.COL_VALOR] == float(v))
+        ]
+        if not duplicada.empty:
+            st.error("Essa consulta ja foi cadastrada nessa data com o mesmo valor.")
+            st.stop()
+
+    ok_consulta = requisicao_supabase(
+        "POST",
+        core.TABELA_CONSULTAS,
+        "Nao foi possivel cadastrar a consulta",
+        json={
+            core.COL_MEDICO: medico_limpo,
+            core.COL_VALOR: float(v),
+            core.COL_DATA_CONSULTA: data_consulta_str,
+        },
+    )
+    if not ok_consulta:
+        st.stop()
+    st.cache_data.clear()
+    avisar_sucesso("Consulta cadastrada com sucesso.")
+    st.rerun()
+
+
+def tela_cadastrar():
+    if not st.session_state.autenticado:
         st.warning("Acesse o menu ADM na lateral.")
+        return
 
-elif aba == "Remover":
-    if st.session_state.autenticado:
-        tab = st.selectbox("Tabela", ["remedios", "consultas", "compras"])
-        df_del = buscar_dados(tab)
-        if not df_del.empty:
-            c = "nome" if tab == "remedios" else ("nome_remedio" if tab == "compras" else "medico")
-            item = st.selectbox("Item", df_del[c].tolist())
-            if st.button("Apagar registro", type="primary", use_container_width=True):
-                id_i = df_del[df_del[c] == item]["id"].values[0]
-                ok_delete = requisicao_supabase(
-                    "DELETE",
-                    f"{tab}?id=eq.{id_i}",
-                    "Não foi possível remover o item",
-                )
-                if not ok_delete:
-                    st.stop()
-                if tab == "remedios":
-                    ok_compras = requisicao_supabase(
-                        "DELETE",
-                        f"compras?nome_remedio=eq.{item}",
-                        "Remédio removido, mas não foi possível remover as compras relacionadas",
-                    )
-                    if not ok_compras:
-                        st.stop()
-                st.cache_data.clear()
-                avisar_sucesso("Item removido com sucesso.")
-                st.rerun()
+    tipo = st.segmented_control("Tipo", [core.TIPO_REMEDIO, core.TIPO_CONSULTA], default=core.TIPO_REMEDIO)
+    with st.form("cad"):
+        if tipo == core.TIPO_REMEDIO:
+            cadastrar_remedio()
         else:
-            st.info("Não há itens para remover nessa tabela.")
-    else:
+            cadastrar_consulta()
+
+
+def tela_remover():
+    if not st.session_state.autenticado:
         st.warning("Acesse o menu ADM na lateral.")
+        return
+
+    tab = st.selectbox("Tabela", [core.TABELA_REMEDIOS, core.TABELA_CONSULTAS, core.TABELA_COMPRAS])
+    df_del = buscar_dados(tab)
+    if df_del.empty:
+        st.info("Nao ha itens para remover nessa tabela.")
+        return
+
+    coluna_nome = (
+        core.COL_NOME
+        if tab == core.TABELA_REMEDIOS
+        else (core.COL_NOME_REMEDIO if tab == core.TABELA_COMPRAS else core.COL_MEDICO)
+    )
+    item = st.selectbox("Item", df_del[coluna_nome].tolist())
+    if st.button("Apagar registro", type="primary", use_container_width=True):
+        id_i = df_del[df_del[coluna_nome] == item][core.COL_ID].values[0]
+        ok_delete = requisicao_supabase(
+            "DELETE",
+            f"{tab}?id=eq.{id_i}",
+            "Nao foi possivel remover o item",
+        )
+        if not ok_delete:
+            st.stop()
+        if tab == core.TABELA_REMEDIOS:
+            ok_compras = requisicao_supabase(
+                "DELETE",
+                f"{core.TABELA_COMPRAS}?{core.COL_NOME_REMEDIO}=eq.{item}",
+                "Remedio removido, mas nao foi possivel remover as compras relacionadas",
+            )
+            if not ok_compras:
+                st.stop()
+        st.cache_data.clear()
+        avisar_sucesso("Item removido com sucesso.")
+        st.rerun()
+
+
+def main():
+    if not API_KEY:
+        st.warning("Configure SUPABASE_API_KEY em .streamlit/secrets.toml para conectar ao Supabase.")
+
+    renderizar_menu_lateral()
+    aba = renderizar_topo()
+    mostrar_mensagem_sucesso()
+
+    if aba == "Estoque":
+        tela_estoque()
+    elif aba == "Financeiro":
+        tela_financeiro()
+    elif aba == "Consultas":
+        tela_consultas()
+    elif aba == "Cadastrar":
+        tela_cadastrar()
+    elif aba == "Remover":
+        tela_remover()
+
+
+main()
