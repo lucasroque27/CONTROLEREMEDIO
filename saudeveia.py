@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from html import escape
+from urllib.parse import quote
 
 import pandas as pd
 import requests
@@ -19,6 +20,7 @@ except ModuleNotFoundError:
         COL_DOSE_DIARIA = "dose_diaria"
         COL_DATA_INICIO = "data_inicio"
         COL_ALERTA_ENVIADO = "alerta_enviado"
+        COL_ATIVO = "ativo"
         COL_NOME_REMEDIO = "nome_remedio"
         COL_VALOR = "valor"
         COL_DATA_COMPRA = "data_compra"
@@ -27,6 +29,7 @@ except ModuleNotFoundError:
 
         TIPO_REMEDIO = "Remedio"
         TIPO_CONSULTA = "Consulta"
+        INATIVO_PREFIXO = "[INATIVO] "
 
         COLUNAS_GASTOS = ["data", "mes_ano", "tipo", "descricao", "valor", "origem", "id_origem"]
         COLUNAS_GASTOS_VISIVEIS = ["data", "mes_ano", "tipo", "descricao", "valor"]
@@ -50,6 +53,55 @@ except ModuleNotFoundError:
         @staticmethod
         def texto_normalizado(valor):
             return str(valor or "").strip().casefold()
+
+        @staticmethod
+        def remedio_inativo(nome):
+            return _CoreFallback.texto_normalizado(nome).startswith(
+                _CoreFallback.texto_normalizado(_CoreFallback.INATIVO_PREFIXO)
+            )
+
+        @staticmethod
+        def booleano_ou_nulo(valor):
+            if valor is None or pd.isna(valor):
+                return None
+            if isinstance(valor, bool):
+                return valor
+            if isinstance(valor, (int, float)):
+                return valor != 0
+            if isinstance(valor, str):
+                normalizado = _CoreFallback.texto_normalizado(valor)
+                if normalizado in {"false", "0", "nao", "não", "n", "inativo"}:
+                    return False
+                if normalizado in {"true", "1", "sim", "s", "ativo"}:
+                    return True
+            return bool(valor)
+
+        @staticmethod
+        def registro_remedio_ativo(registro):
+            ativo = _CoreFallback.booleano_ou_nulo(registro.get(_CoreFallback.COL_ATIVO, None))
+            if ativo is not None:
+                return ativo
+            return not _CoreFallback.remedio_inativo(registro.get(_CoreFallback.COL_NOME, ""))
+
+        @staticmethod
+        def registro_remedio_inativo(registro):
+            return not _CoreFallback.registro_remedio_ativo(registro)
+
+        @staticmethod
+        def nome_visivel_remedio(nome):
+            nome = str(nome or "").strip()
+            if _CoreFallback.remedio_inativo(nome):
+                return nome[len(_CoreFallback.INATIVO_PREFIXO):].strip()
+            return nome
+
+        @staticmethod
+        def aplicar_inativo(nome):
+            nome = _CoreFallback.nome_visivel_remedio(nome)
+            return f"{_CoreFallback.INATIVO_PREFIXO}{nome}" if nome else _CoreFallback.INATIVO_PREFIXO.strip()
+
+        @staticmethod
+        def remover_inativo(nome):
+            return _CoreFallback.nome_visivel_remedio(nome)
 
         @staticmethod
         def data_iso(data_valor):
@@ -320,6 +372,80 @@ def requisicao_supabase(metodo, tabela, erro_contexto, **kwargs):
         return False
 
 
+def requisicao_supabase_silenciosa(metodo, tabela, **kwargs):
+    try:
+        return requests.request(
+            metodo,
+            f"{URL_BASE}{tabela}",
+            headers=HEADERS,
+            timeout=15,
+            **kwargs,
+        )
+    except Exception as exc:
+        return exc
+
+
+def resposta_ok(resposta):
+    return hasattr(resposta, "status_code") and 200 <= resposta.status_code < 300
+
+
+def erro_coluna_ativo(resposta):
+    texto = getattr(resposta, "text", "")
+    return "ativo" in texto.lower() and getattr(resposta, "status_code", 0) in {400, 404}
+
+
+def mostrar_erro_resposta(erro_contexto, resposta):
+    if isinstance(resposta, Exception):
+        st.error(f"{erro_contexto}. Detalhe: {resposta}")
+    else:
+        st.error(
+            f"{erro_contexto}. Codigo: {resposta.status_code}. "
+            f"Resposta: {resposta.text[:180]}"
+        )
+
+
+def atualizar_remedio_com_fallback(remedio, payload_com_ativo, payload_sem_ativo, erro_contexto):
+    remedio_id = remedio[core.COL_ID]
+    resposta = requisicao_supabase_silenciosa(
+        "PATCH",
+        f"{core.TABELA_REMEDIOS}?id=eq.{remedio_id}",
+        json=payload_com_ativo,
+    )
+    if resposta_ok(resposta):
+        return True
+
+    if erro_coluna_ativo(resposta):
+        resposta_fallback = requisicao_supabase_silenciosa(
+            "PATCH",
+            f"{core.TABELA_REMEDIOS}?id=eq.{remedio_id}",
+            json=payload_sem_ativo,
+        )
+        if resposta_ok(resposta_fallback):
+            return True
+        mostrar_erro_resposta(erro_contexto, resposta_fallback)
+        return False
+
+    mostrar_erro_resposta(erro_contexto, resposta)
+    return False
+
+
+def alterar_status_remedio(remedio, ativo):
+    nome_visivel = core.nome_visivel_remedio(remedio.get(core.COL_NOME, ""))
+    payload_com_ativo = {
+        core.COL_NOME: nome_visivel,
+        core.COL_ATIVO: bool(ativo),
+    }
+    payload_sem_ativo = {
+        core.COL_NOME: core.remover_inativo(nome_visivel) if ativo else core.aplicar_inativo(nome_visivel),
+    }
+    return atualizar_remedio_com_fallback(
+        remedio,
+        payload_com_ativo,
+        payload_sem_ativo,
+        "Nao foi possivel alterar o status do remedio",
+    )
+
+
 @st.cache_data(ttl=1)
 def buscar_dados(tabela):
     if not API_KEY:
@@ -353,307 +479,28 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-PALETAS = {
-    "Clinico Azul": {
-        "bg": "#f7f9fc",
-        "card": "#ffffff",
-        "text": "#172033",
-        "muted": "#667085",
-        "border": "#d7dee8",
-        "accent": "#1d5f8f",
-        "accent_strong": "#164a73",
-        "soft": "#eef6fb",
-        "success": "#167c5a",
-        "success_bg": "#edf8f4",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#a15c07",
-        "warning_bg": "#fff7e8",
-        "header": "rgba(247, 249, 252, 0.94)",
-    },
-    "Coral Vivo": {
-        "bg": "#fff8f5",
-        "card": "#ffffff",
-        "text": "#211b1b",
-        "muted": "#746b66",
-        "border": "#eadbd4",
-        "accent": "#d9472f",
-        "accent_strong": "#a93624",
-        "soft": "#fff0ea",
-        "success": "#18715c",
-        "success_bg": "#ecf8f4",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#9a5b00",
-        "warning_bg": "#fff5df",
-        "header": "rgba(255, 248, 245, 0.94)",
-    },
-    "Verde Safira": {
-        "bg": "#f4fbfa",
-        "card": "#ffffff",
-        "text": "#102326",
-        "muted": "#5d7174",
-        "border": "#cfe4e2",
-        "accent": "#007f7a",
-        "accent_strong": "#005f5b",
-        "soft": "#e8f7f5",
-        "success": "#0f7a4f",
-        "success_bg": "#eaf8f1",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#9a6200",
-        "warning_bg": "#fff7e2",
-        "header": "rgba(244, 251, 250, 0.94)",
-    },
-    "Safira Impacto": {
-        "bg": "#f5f7ff",
-        "card": "#ffffff",
-        "text": "#121a35",
-        "muted": "#5f6882",
-        "border": "#d8def2",
-        "accent": "#3454d1",
-        "accent_strong": "#243a99",
-        "soft": "#eef1ff",
-        "success": "#14795b",
-        "success_bg": "#edf8f4",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#9b5b00",
-        "warning_bg": "#fff6e3",
-        "header": "rgba(245, 247, 255, 0.94)",
-    },
-    "Roxo Neon": {
-        "bg": "#fbf7ff",
-        "card": "#ffffff",
-        "text": "#20142f",
-        "muted": "#6f617d",
-        "border": "#e2d4ef",
-        "accent": "#7c3aed",
-        "accent_strong": "#5b21b6",
-        "soft": "#f3e8ff",
-        "success": "#10845f",
-        "success_bg": "#ebf9f3",
-        "danger": "#c02635",
-        "danger_bg": "#fff1f3",
-        "warning": "#a16207",
-        "warning_bg": "#fff7df",
-        "header": "rgba(251, 247, 255, 0.94)",
-    },
-    "Azul Eletrico": {
-        "bg": "#f3faff",
-        "card": "#ffffff",
-        "text": "#102033",
-        "muted": "#5d6d7d",
-        "border": "#cfe4f5",
-        "accent": "#0284c7",
-        "accent_strong": "#075985",
-        "soft": "#e7f5ff",
-        "success": "#087f5b",
-        "success_bg": "#eaf8f2",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#a15c07",
-        "warning_bg": "#fff6df",
-        "header": "rgba(243, 250, 255, 0.94)",
-    },
-    "Lima Energia": {
-        "bg": "#f8fff2",
-        "card": "#ffffff",
-        "text": "#18220f",
-        "muted": "#627052",
-        "border": "#d8e9c7",
-        "accent": "#65a30d",
-        "accent_strong": "#3f6212",
-        "soft": "#f0f9e4",
-        "success": "#15803d",
-        "success_bg": "#edf8ed",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#a15c07",
-        "warning_bg": "#fff7df",
-        "header": "rgba(248, 255, 242, 0.94)",
-    },
-    "Magenta Clinico": {
-        "bg": "#fff5fb",
-        "card": "#ffffff",
-        "text": "#2b1422",
-        "muted": "#765f6d",
-        "border": "#efd2e3",
-        "accent": "#db2777",
-        "accent_strong": "#9d174d",
-        "soft": "#fce7f3",
-        "success": "#0f7a5a",
-        "success_bg": "#ebf8f3",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#a15c07",
-        "warning_bg": "#fff7df",
-        "header": "rgba(255, 245, 251, 0.94)",
-    },
-    "Laranja Premium": {
-        "bg": "#fffaf2",
-        "card": "#ffffff",
-        "text": "#26190b",
-        "muted": "#735f48",
-        "border": "#ead9bd",
-        "accent": "#ea580c",
-        "accent_strong": "#9a3412",
-        "soft": "#ffedd5",
-        "success": "#157f55",
-        "success_bg": "#ecf8f2",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#92400e",
-        "warning_bg": "#fff7e8",
-        "header": "rgba(255, 250, 242, 0.94)",
-    },
-    "Ciano Futuro": {
-        "bg": "#f0fdff",
-        "card": "#ffffff",
-        "text": "#0f2530",
-        "muted": "#52717b",
-        "border": "#c5e8ee",
-        "accent": "#0891b2",
-        "accent_strong": "#155e75",
-        "soft": "#cffafe",
-        "success": "#0f766e",
-        "success_bg": "#e7f8f5",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#a15c07",
-        "warning_bg": "#fff7df",
-        "header": "rgba(240, 253, 255, 0.94)",
-    },
-    "Rosa Luxo": {
-        "bg": "#fff1f8",
-        "card": "#ffffff",
-        "text": "#301525",
-        "muted": "#7a6070",
-        "border": "#f0c7dc",
-        "accent": "#e11d74",
-        "accent_strong": "#9f1239",
-        "soft": "#fce7f3",
-        "success": "#0f766e",
-        "success_bg": "#e7f8f5",
-        "danger": "#be123c",
-        "danger_bg": "#fff1f2",
-        "warning": "#a16207",
-        "warning_bg": "#fff7df",
-        "header": "rgba(255, 241, 248, 0.94)",
-    },
-    "Lavanda Clara": {
-        "bg": "#fbf8ff",
-        "card": "#ffffff",
-        "text": "#241533",
-        "muted": "#70627d",
-        "border": "#e5d7f4",
-        "accent": "#8b5cf6",
-        "accent_strong": "#6d28d9",
-        "soft": "#f3edff",
-        "success": "#0f766e",
-        "success_bg": "#e7f8f5",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#9a6200",
-        "warning_bg": "#fff7e2",
-        "header": "rgba(251, 248, 255, 0.94)",
-    },
-    "Menta Leve": {
-        "bg": "#f3fff9",
-        "card": "#ffffff",
-        "text": "#10231b",
-        "muted": "#5b7066",
-        "border": "#ccebdc",
-        "accent": "#10b981",
-        "accent_strong": "#047857",
-        "soft": "#e7f8f0",
-        "success": "#0f7a4f",
-        "success_bg": "#e9f8f0",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#9a6200",
-        "warning_bg": "#fff7df",
-        "header": "rgba(243, 255, 249, 0.94)",
-    },
-    "Amarelo Solar": {
-        "bg": "#fffdf2",
-        "card": "#ffffff",
-        "text": "#261f0a",
-        "muted": "#746849",
-        "border": "#eadfba",
-        "accent": "#d97706",
-        "accent_strong": "#92400e",
-        "soft": "#fff7d6",
-        "success": "#157f55",
-        "success_bg": "#ecf8f2",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#a15c07",
-        "warning_bg": "#fff4cc",
-        "header": "rgba(255, 253, 242, 0.94)",
-    },
-    "Azul Gelo": {
-        "bg": "#f5fbff",
-        "card": "#ffffff",
-        "text": "#112236",
-        "muted": "#607489",
-        "border": "#d1e5f6",
-        "accent": "#2563eb",
-        "accent_strong": "#1d4ed8",
-        "soft": "#eaf4ff",
-        "success": "#0f766e",
-        "success_bg": "#e7f8f5",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#a15c07",
-        "warning_bg": "#fff7df",
-        "header": "rgba(245, 251, 255, 0.94)",
-    },
-    "Pessego Claro": {
-        "bg": "#fff7ed",
-        "card": "#ffffff",
-        "text": "#2b1a10",
-        "muted": "#765f50",
-        "border": "#efd7c3",
-        "accent": "#f97316",
-        "accent_strong": "#c2410c",
-        "soft": "#ffedd5",
-        "success": "#14795b",
-        "success_bg": "#edf8f4",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#92400e",
-        "warning_bg": "#fff7e8",
-        "header": "rgba(255, 247, 237, 0.94)",
-    },
-    "Turquesa Claro": {
-        "bg": "#f2fffd",
-        "card": "#ffffff",
-        "text": "#0f2927",
-        "muted": "#587572",
-        "border": "#c9e8e3",
-        "accent": "#14b8a6",
-        "accent_strong": "#0f766e",
-        "soft": "#e3faf6",
-        "success": "#0f7a5a",
-        "success_bg": "#ebf8f3",
-        "danger": "#b42318",
-        "danger_bg": "#fff1f0",
-        "warning": "#9a6200",
-        "warning_bg": "#fff7df",
-        "header": "rgba(242, 255, 253, 0.94)",
-    },
+PALETA = {
+    "bg": "#f2fffd",
+    "card": "#ffffff",
+    "text": "#0f2927",
+    "muted": "#587572",
+    "border": "#c9e8e3",
+    "accent": "#14b8a6",
+    "accent_strong": "#0f766e",
+    "soft": "#e3faf6",
+    "success": "#0f7a5a",
+    "success_bg": "#ebf8f3",
+    "danger": "#b42318",
+    "danger_bg": "#fff1f0",
+    "warning": "#9a6200",
+    "warning_bg": "#fff7df",
+    "header": "rgba(242, 255, 253, 0.94)",
 }
 
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
-if "tema_visual" not in st.session_state:
-    st.session_state.tema_visual = "Clinico Azul"
-if st.session_state.tema_visual not in PALETAS:
-    st.session_state.tema_visual = "Clinico Azul"
 
-paleta = PALETAS.get(st.session_state.tema_visual, PALETAS["Clinico Azul"])
-
+paleta = PALETA
 st.markdown(
     """
     <style>
@@ -1084,7 +931,7 @@ def renderizar_menu_lateral():
                     st.session_state.autenticado = True
                     st.rerun()
         else:
-            st.selectbox("Tema visual", list(PALETAS.keys()), key="tema_visual")
+            st.caption("Tema visual: Turquesa Claro")
             if st.button("Sair"):
                 st.session_state.autenticado = False
                 st.rerun()
@@ -1095,7 +942,7 @@ def renderizar_topo():
     st.markdown("<p class='app-subtitle'>Controle de remedios, consultas e gastos</p>", unsafe_allow_html=True)
     return st.segmented_control(
         "Menu",
-        options=["Estoque", "Financeiro", "Consultas", "Cadastrar", "Remover"],
+        options=["Estoque", "Inativos", "Financeiro", "Consultas", "Cadastrar", "Editar", "Remover"],
         default="Estoque",
         label_visibility="collapsed",
     )
@@ -1104,15 +951,14 @@ def renderizar_topo():
 def renderizar_alerta_estoque(remedio, estoque):
     alerta_ja_enviado = bool(remedio.get(core.COL_ALERTA_ENVIADO, False))
     remedio_id = remedio.get(core.COL_ID)
+    nome_remedio = core.nome_visivel_remedio(remedio[core.COL_NOME])
 
     if (
         0 < estoque["resta"] <= 7
         and not alerta_ja_enviado
         and remedio_id not in st.session_state.alertas_enviados
     ):
-        telegram_ok = enviar_telegram(
-            f"{remedio[core.COL_NOME]} acaba em {int(estoque['resta'])} dias!"
-        )
+        telegram_ok = enviar_telegram(f"{nome_remedio} acaba em {int(estoque['resta'])} dias!")
         st.session_state.alertas_enviados.append(remedio_id)
         if telegram_ok:
             requisicao_supabase(
@@ -1123,15 +969,16 @@ def renderizar_alerta_estoque(remedio, estoque):
             )
             st.cache_data.clear()
         else:
-            st.warning(f"Nao foi possivel enviar o alerta do Telegram para {remedio[core.COL_NOME]}.")
+            st.warning(f"Nao foi possivel enviar o alerta do Telegram para {nome_remedio}.")
 
 
 def renderizar_card_estoque(remedio, estoque):
+    nome_remedio = core.nome_visivel_remedio(remedio[core.COL_NOME])
     st.markdown(
         f"""
         <div class="medicine-card {estoque['card_classe']}">
             <div class="medicine-name">
-                <div class="medicine-title">{escape(str(remedio[core.COL_NOME]).upper())}</div>
+                <div class="medicine-title">{escape(nome_remedio.upper())}</div>
                 <div class="medicine-status">{estoque['status_nome']}</div>
                 <div class="medicine-date {estoque['status_classe']}">{estoque['status_texto']}</div>
             </div>
@@ -1158,6 +1005,7 @@ def renderizar_ajuste_estoque(remedio, estoque, hoje):
         return
 
     remedio_id = remedio[core.COL_ID]
+    nome_remedio = core.nome_visivel_remedio(remedio[core.COL_NOME])
     with st.expander("Ajustar Estoque"):
         v_add = st.number_input("Qtd Comprada", 0.0, key=f"a_{remedio_id}")
         v_pago = st.number_input("Valor Pago R$", 0.0, key=f"p_{remedio_id}")
@@ -1188,7 +1036,7 @@ def renderizar_ajuste_estoque(remedio, estoque, hoje):
                 core.TABELA_COMPRAS,
                 "Estoque atualizado, mas nao foi possivel registrar a compra",
                 json={
-                    core.COL_NOME_REMEDIO: remedio[core.COL_NOME],
+                    core.COL_NOME_REMEDIO: nome_remedio,
                     core.COL_VALOR: float(v_pago),
                     core.COL_DATA_COMPRA: core.data_iso(data_compra),
                 },
@@ -1198,7 +1046,7 @@ def renderizar_ajuste_estoque(remedio, estoque, hoje):
 
             telegram_ok = enviar_telegram(
                 "Estoque atualizado\n"
-                f"Remedio: {remedio[core.COL_NOME]}\n"
+                f"Remedio: {nome_remedio}\n"
                 f"Qtd comprada: {v_add:g}\n"
                 f"Estoque atual: {estoque['atual'] + v_add:g}\n"
                 f"Dias estimados: {int((estoque['atual'] + v_add) / estoque['dose']) if estoque['dose'] > 0 else 0}\n"
@@ -1210,6 +1058,14 @@ def renderizar_ajuste_estoque(remedio, estoque, hoje):
             avisar_sucesso("Estoque atualizado com sucesso.")
             st.rerun()
 
+        st.divider()
+        if st.button("Inativar remedio", key=f"inativar_{remedio_id}", use_container_width=True):
+            if not alterar_status_remedio(remedio, ativo=False):
+                st.stop()
+            st.cache_data.clear()
+            avisar_sucesso("Remedio inativado com sucesso.")
+            st.rerun()
+
 
 def tela_estoque():
     df = buscar_dados(core.TABELA_REMEDIOS)
@@ -1219,10 +1075,21 @@ def tela_estoque():
 
     hoje = datetime.now()
     remedios_ordenados = []
+    total_inativos = 0
     for _, remedio in df.iterrows():
+        if core.registro_remedio_inativo(remedio):
+            total_inativos += 1
+            continue
         estoque = core.calcular_estoque(remedio, hoje)
         nome_ordem = core.texto_normalizado(remedio.get(core.COL_NOME, ""))
         remedios_ordenados.append((estoque["prioridade"], nome_ordem, remedio, estoque))
+
+    if total_inativos:
+        st.caption(f"{total_inativos} remedio(s) inativo(s) oculto(s) do estoque.")
+
+    if not remedios_ordenados:
+        st.info("Nenhum remedio ativo no estoque.")
+        return
 
     for _, _, remedio, estoque in sorted(remedios_ordenados, key=lambda item: (item[0], item[1])):
         renderizar_alerta_estoque(remedio, estoque)
@@ -1235,6 +1102,44 @@ def tela_estoque():
                 st.error("Estoque Zerado")
 
             renderizar_ajuste_estoque(remedio, estoque, hoje)
+
+
+def tela_inativos():
+    df = buscar_dados(core.TABELA_REMEDIOS)
+    if df.empty:
+        st.info("Nenhum remedio cadastrado ainda.")
+        return
+
+    hoje = datetime.now()
+    remedios_inativos = []
+    for _, remedio in df.iterrows():
+        if not core.registro_remedio_inativo(remedio):
+            continue
+        estoque = core.calcular_estoque(remedio, hoje)
+        nome_ordem = core.texto_normalizado(core.nome_visivel_remedio(remedio.get(core.COL_NOME, "")))
+        remedios_inativos.append((nome_ordem, remedio, estoque))
+
+    if not remedios_inativos:
+        st.info("Nenhum remedio inativo no momento.")
+        return
+
+    st.caption(f"{len(remedios_inativos)} remedio(s) inativo(s).")
+    for _, remedio, estoque in sorted(remedios_inativos, key=lambda item: item[0]):
+        with st.container(border=True):
+            renderizar_card_estoque(remedio, estoque)
+            if st.session_state.autenticado:
+                if st.button(
+                    "Reativar remedio",
+                    key=f"reativar_{remedio[core.COL_ID]}",
+                    use_container_width=True,
+                ):
+                    if not alterar_status_remedio(remedio, ativo=True):
+                        st.stop()
+                    st.cache_data.clear()
+                    avisar_sucesso("Remedio reativado com sucesso.")
+                    st.rerun()
+            else:
+                st.info("Acesse o ADM na lateral para reativar.")
 
 
 def tela_financeiro():
@@ -1335,7 +1240,7 @@ def cadastrar_remedio():
 
     df_remedios = buscar_dados(core.TABELA_REMEDIOS)
     if not df_remedios.empty and core.COL_NOME in df_remedios:
-        nomes_existentes = df_remedios[core.COL_NOME].map(core.texto_normalizado)
+        nomes_existentes = df_remedios[core.COL_NOME].map(core.nome_visivel_remedio).map(core.texto_normalizado)
         if core.texto_normalizado(nome_limpo) in set(nomes_existentes):
             st.error("Ja existe um remedio cadastrado com esse nome.")
             st.stop()
@@ -1435,6 +1340,163 @@ def tela_cadastrar():
             cadastrar_consulta()
 
 
+def rotulo_remedio(remedio):
+    status = "Inativo" if core.registro_remedio_inativo(remedio) else "Ativo"
+    nome = core.nome_visivel_remedio(remedio.get(core.COL_NOME, ""))
+    return f"{status} - {nome} (id {remedio[core.COL_ID]})"
+
+
+def rotulo_compra(compra):
+    data = compra.get(core.COL_DATA_COMPRA, "")
+    nome = compra.get(core.COL_NOME_REMEDIO, "")
+    valor = core.formatar_moeda_br(compra.get(core.COL_VALOR, 0))
+    return f"{data} - {nome} - {valor} (id {compra[core.COL_ID]})"
+
+
+def editar_remedio():
+    df = buscar_dados(core.TABELA_REMEDIOS)
+    if df.empty:
+        st.info("Nenhum remedio cadastrado para editar.")
+        return
+
+    opcoes = {rotulo_remedio(remedio): idx for idx, remedio in df.iterrows()}
+    escolha = st.selectbox("Remedio", list(opcoes.keys()))
+    remedio = df.loc[opcoes[escolha]]
+    nome_atual = str(remedio.get(core.COL_NOME, ""))
+    nome_visivel = core.nome_visivel_remedio(nome_atual)
+    remedio_ativo = core.registro_remedio_ativo(remedio)
+
+    with st.form("editar_remedio"):
+        novo_nome = st.text_input("Nome do remedio", value=nome_visivel)
+        nova_qtd = st.number_input(
+            "Qtd atual",
+            min_value=0.0,
+            value=float(remedio.get(core.COL_QTD_TOTAL, 0) or 0),
+        )
+        nova_dose = st.number_input(
+            "Dose/Dia",
+            min_value=0.0,
+            value=float(remedio.get(core.COL_DOSE_DIARIA, 0) or 0),
+        )
+        novo_status_ativo = st.checkbox("Remedio ativo", value=remedio_ativo)
+        atualizar_compras = st.checkbox(
+            "Atualizar esse nome tambem no historico de compras",
+            value=True,
+        )
+        salvar = st.form_submit_button("Salvar alteracoes", use_container_width=True)
+
+    if not salvar:
+        return
+
+    nome_limpo = novo_nome.strip()
+    if not nome_limpo:
+        st.error("Informe o nome do remedio.")
+        st.stop()
+
+    payload_com_ativo = {
+        core.COL_NOME: nome_limpo,
+        core.COL_QTD_TOTAL: float(nova_qtd),
+        core.COL_DOSE_DIARIA: float(nova_dose),
+        core.COL_ATIVO: bool(novo_status_ativo),
+    }
+    payload_sem_ativo = {
+        core.COL_NOME: nome_limpo if novo_status_ativo else core.aplicar_inativo(nome_limpo),
+        core.COL_QTD_TOTAL: float(nova_qtd),
+        core.COL_DOSE_DIARIA: float(nova_dose),
+    }
+    ok_remedio = atualizar_remedio_com_fallback(
+        remedio,
+        payload_com_ativo,
+        payload_sem_ativo,
+        "Nao foi possivel atualizar o remedio",
+    )
+    if not ok_remedio:
+        st.stop()
+
+    if atualizar_compras and core.texto_normalizado(nome_visivel) != core.texto_normalizado(nome_limpo):
+        nome_antigo = quote(nome_visivel, safe="")
+        ok_compras = requisicao_supabase(
+            "PATCH",
+            f"{core.TABELA_COMPRAS}?{core.COL_NOME_REMEDIO}=eq.{nome_antigo}",
+            "Remedio atualizado, mas nao foi possivel atualizar o historico de compras",
+            json={core.COL_NOME_REMEDIO: nome_limpo},
+        )
+        if not ok_compras:
+            st.stop()
+
+    st.cache_data.clear()
+    avisar_sucesso("Remedio atualizado com sucesso.")
+    st.rerun()
+
+
+def editar_compra():
+    df = buscar_dados(core.TABELA_COMPRAS)
+    if df.empty:
+        st.info("Nenhuma compra cadastrada para editar.")
+        return
+
+    df_ordenado = df.copy()
+    if core.COL_DATA_COMPRA in df_ordenado:
+        df_ordenado[core.COL_DATA_COMPRA] = pd.to_datetime(
+            df_ordenado[core.COL_DATA_COMPRA], errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
+        df_ordenado = df_ordenado.sort_values(core.COL_DATA_COMPRA, ascending=False)
+
+    opcoes = {rotulo_compra(compra): idx for idx, compra in df_ordenado.iterrows()}
+    escolha = st.selectbox("Compra", list(opcoes.keys()))
+    compra = df_ordenado.loc[opcoes[escolha]]
+    data_atual = pd.to_datetime(compra.get(core.COL_DATA_COMPRA), errors="coerce")
+    if pd.isna(data_atual):
+        data_atual = pd.Timestamp(datetime.now().date())
+
+    with st.form("editar_compra"):
+        novo_nome = st.text_input("Nome no historico", value=str(compra.get(core.COL_NOME_REMEDIO, "")))
+        novo_valor = st.number_input(
+            "Valor pago R$",
+            min_value=0.0,
+            value=float(compra.get(core.COL_VALOR, 0) or 0),
+        )
+        nova_data = st.date_input("Data da compra", value=data_atual.date())
+        salvar = st.form_submit_button("Salvar compra", use_container_width=True)
+
+    if not salvar:
+        return
+
+    nome_limpo = novo_nome.strip()
+    if not nome_limpo:
+        st.error("Informe o nome do remedio no historico.")
+        st.stop()
+
+    ok_compra = requisicao_supabase(
+        "PATCH",
+        f"{core.TABELA_COMPRAS}?id=eq.{compra[core.COL_ID]}",
+        "Nao foi possivel atualizar a compra",
+        json={
+            core.COL_NOME_REMEDIO: nome_limpo,
+            core.COL_VALOR: float(novo_valor),
+            core.COL_DATA_COMPRA: core.data_iso(nova_data),
+        },
+    )
+    if not ok_compra:
+        st.stop()
+
+    st.cache_data.clear()
+    avisar_sucesso("Compra atualizada com sucesso.")
+    st.rerun()
+
+
+def tela_editar():
+    if not st.session_state.autenticado:
+        st.warning("Acesse o menu ADM na lateral.")
+        return
+
+    alvo = st.segmented_control("Editar", ["Remedio", "Compra"], default="Remedio")
+    if alvo == "Remedio":
+        editar_remedio()
+    else:
+        editar_compra()
+
+
 def tela_remover():
     if not st.session_state.autenticado:
         st.warning("Acesse o menu ADM na lateral.")
@@ -1461,16 +1523,8 @@ def tela_remover():
         )
         if not ok_delete:
             st.stop()
-        if tab == core.TABELA_REMEDIOS:
-            ok_compras = requisicao_supabase(
-                "DELETE",
-                f"{core.TABELA_COMPRAS}?{core.COL_NOME_REMEDIO}=eq.{item}",
-                "Remedio removido, mas nao foi possivel remover as compras relacionadas",
-            )
-            if not ok_compras:
-                st.stop()
         st.cache_data.clear()
-        avisar_sucesso("Item removido com sucesso.")
+        avisar_sucesso("Item removido com sucesso. O historico financeiro foi mantido.")
         st.rerun()
 
 
@@ -1484,14 +1538,19 @@ def main():
 
     if aba == "Estoque":
         tela_estoque()
+    elif aba == "Inativos":
+        tela_inativos()
     elif aba == "Financeiro":
         tela_financeiro()
     elif aba == "Consultas":
         tela_consultas()
     elif aba == "Cadastrar":
         tela_cadastrar()
+    elif aba == "Editar":
+        tela_editar()
     elif aba == "Remover":
         tela_remover()
 
 
 main()
+
