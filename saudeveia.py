@@ -6,10 +6,15 @@ import pandas as pd
 import requests
 import streamlit as st
 
+# App Streamlit de controle de saude.
+# Este arquivo tambem e copiado para saudeveia.py, que e o arquivo usado no deploy.
 try:
     import saude_core as core
 except ModuleNotFoundError:
+    # Fallback para o Streamlit Cloud: se o arquivo saude_core.py nao for enviado,
+    # o app continua rodando com uma copia local das regras principais.
     class _CoreFallback:
+        """Copia minima das regras de negocio usadas fora da interface."""
         TABELA_REMEDIOS = "remedios"
         TABELA_COMPRAS = "compras"
         TABELA_CONSULTAS = "consultas"
@@ -52,16 +57,19 @@ except ModuleNotFoundError:
 
         @staticmethod
         def texto_normalizado(valor):
+            """Normaliza textos para comparacoes sem diferenca entre maiusculas/minusculas."""
             return str(valor or "").strip().casefold()
 
         @staticmethod
         def remedio_inativo(nome):
+            """Fallback antigo: identifica inativos pelo prefixo no nome."""
             return _CoreFallback.texto_normalizado(nome).startswith(
                 _CoreFallback.texto_normalizado(_CoreFallback.INATIVO_PREFIXO)
             )
 
         @staticmethod
         def booleano_ou_nulo(valor):
+            """Converte valores do banco para bool, preservando None quando nao ha coluna."""
             if valor is None or pd.isna(valor):
                 return None
             if isinstance(valor, bool):
@@ -78,6 +86,7 @@ except ModuleNotFoundError:
 
         @staticmethod
         def registro_remedio_ativo(registro):
+            """Prioriza a coluna ativo; se ela nao existir, usa o prefixo [INATIVO]."""
             ativo = _CoreFallback.booleano_ou_nulo(registro.get(_CoreFallback.COL_ATIVO, None))
             if ativo is not None:
                 return ativo
@@ -89,6 +98,7 @@ except ModuleNotFoundError:
 
         @staticmethod
         def nome_visivel_remedio(nome):
+            """Remove o marcador tecnico do nome antes de mostrar na tela."""
             nome = str(nome or "").strip()
             if _CoreFallback.remedio_inativo(nome):
                 return nome[len(_CoreFallback.INATIVO_PREFIXO):].strip()
@@ -96,6 +106,7 @@ except ModuleNotFoundError:
 
         @staticmethod
         def aplicar_inativo(nome):
+            """Marca como inativo sem apagar o registro nem o historico financeiro."""
             nome = _CoreFallback.nome_visivel_remedio(nome)
             return f"{_CoreFallback.INATIVO_PREFIXO}{nome}" if nome else _CoreFallback.INATIVO_PREFIXO.strip()
 
@@ -105,10 +116,12 @@ except ModuleNotFoundError:
 
         @staticmethod
         def data_iso(data_valor):
+            """Garante data em formato aceito pelo Supabase/PostgREST."""
             return pd.to_datetime(data_valor).strftime("%Y-%m-%d")
 
         @staticmethod
         def formatar_moeda_br(valor):
+            """Formata valores no padrao brasileiro usado nas telas."""
             numero = float(valor or 0)
             texto = f"{numero:,.2f}"
             texto = texto.replace(",", "_").replace(".", ",").replace("_", ".")
@@ -123,6 +136,7 @@ except ModuleNotFoundError:
 
         @staticmethod
         def calcular_estoque(registro, hoje=None):
+            """Calcula estoque atual, dias restantes e status visual do remedio."""
             hoje = pd.to_datetime(hoje or datetime.now()).to_pydatetime()
             data_inicio = pd.to_datetime(registro.get(_CoreFallback.COL_DATA_INICIO), errors="coerce")
             qtd_total = _CoreFallback._float_seguro(registro.get(_CoreFallback.COL_QTD_TOTAL))
@@ -163,6 +177,7 @@ except ModuleNotFoundError:
 
         @staticmethod
         def classificar_estoque(resta, dose):
+            """Define prioridade e classes visuais para ordenar cards de estoque."""
             if dose <= 0:
                 return {
                     "status_nome": "Dose invalida",
@@ -205,6 +220,7 @@ except ModuleNotFoundError:
 
         @staticmethod
         def montar_gastos_unificados(df_com, df_con):
+            """Une compras e consultas em uma unica tabela para financeiro/exportacao."""
             registros = []
 
             if not df_com.empty:
@@ -321,6 +337,7 @@ except ModuleNotFoundError:
 
 
 # --- 1. CONFIGURACOES ---
+# Credenciais e endpoints usados pelas chamadas REST e Telegram.
 URL_BASE = "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
 API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBodmpqd3JlcnJjbnNmbXJpanlnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njc5MjMxMiwiZXhwIjoyMDkyMzY4MzEyfQ.KzhZ0xZiJ4EPqKu-Ql4NT64mV9LzoOFbn7oapBU3gTk"
 TELEGRAM_BOT_TOKEN = "8256417654:AAFcjDaGFVYFCctzpIJnVoshjQx6M1A1vOM"
@@ -336,6 +353,7 @@ HEADERS = {
 
 
 def enviar_telegram(msg):
+    """Envia alertas simples para o Telegram; falha silenciosamente para nao travar o app."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return False
 
@@ -351,6 +369,7 @@ def enviar_telegram(msg):
 
 
 def requisicao_supabase(metodo, tabela, erro_contexto, **kwargs):
+    """Faz requisicoes REST ao Supabase mostrando erro na tela quando algo falha."""
     if not API_KEY:
         st.error("Configure SUPABASE_API_KEY em .streamlit/secrets.toml.")
         return False
@@ -373,6 +392,7 @@ def requisicao_supabase(metodo, tabela, erro_contexto, **kwargs):
 
 
 def requisicao_supabase_silenciosa(metodo, tabela, **kwargs):
+    """Versao sem st.error, usada quando precisamos tentar fallback antes de avisar."""
     try:
         return requests.request(
             metodo,
@@ -386,15 +406,18 @@ def requisicao_supabase_silenciosa(metodo, tabela, **kwargs):
 
 
 def resposta_ok(resposta):
+    """Confere se a resposta HTTP foi bem-sucedida."""
     return hasattr(resposta, "status_code") and 200 <= resposta.status_code < 300
 
 
 def erro_coluna_ativo(resposta):
+    """Detecta banco antigo sem a coluna ativo para acionar fallback por prefixo."""
     texto = getattr(resposta, "text", "")
     return "ativo" in texto.lower() and getattr(resposta, "status_code", 0) in {400, 404}
 
 
 def mostrar_erro_resposta(erro_contexto, resposta):
+    """Mostra erros de requests ou excecoes de rede em formato amigavel."""
     if isinstance(resposta, Exception):
         st.error(f"{erro_contexto}. Detalhe: {resposta}")
     else:
@@ -405,6 +428,7 @@ def mostrar_erro_resposta(erro_contexto, resposta):
 
 
 def atualizar_remedio_com_fallback(remedio, payload_com_ativo, payload_sem_ativo, erro_contexto):
+    """Atualiza remedio usando coluna ativo; se ela nao existir, usa o nome com prefixo."""
     remedio_id = remedio[core.COL_ID]
     resposta = requisicao_supabase_silenciosa(
         "PATCH",
@@ -430,6 +454,7 @@ def atualizar_remedio_com_fallback(remedio, payload_com_ativo, payload_sem_ativo
 
 
 def alterar_status_remedio(remedio, ativo):
+    """Ativa/inativa remedio mantendo compras e historico financeiro intactos."""
     nome_visivel = core.nome_visivel_remedio(remedio.get(core.COL_NOME, ""))
     payload_com_ativo = {
         core.COL_NOME: nome_visivel,
@@ -448,6 +473,7 @@ def alterar_status_remedio(remedio, ativo):
 
 @st.cache_data(ttl=1)
 def buscar_dados(tabela):
+    """Busca todos os registros de uma tabela e devolve DataFrame para as telas."""
     if not API_KEY:
         return pd.DataFrame()
 
@@ -459,14 +485,17 @@ def buscar_dados(tabela):
 
 
 def dataframe_para_csv(df):
+    """Exporta planilhas em UTF-8 com BOM para abrir bem no Excel/Power BI."""
     return df.to_csv(index=False).encode("utf-8-sig")
 
 
 def avisar_sucesso(mensagem):
+    """Guarda mensagem para aparecer depois do st.rerun."""
     st.session_state.mensagem_sucesso = mensagem
 
 
 def mostrar_mensagem_sucesso():
+    """Mostra e remove a mensagem de sucesso pendente."""
     mensagem = st.session_state.pop("mensagem_sucesso", None)
     if mensagem:
         st.success(mensagem)
@@ -479,6 +508,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# Tema unico do app. Se quiser trocar o visual no futuro, altere somente estes tokens.
 PALETA = {
     "bg": "#f2fffd",
     "card": "#ffffff",
@@ -501,6 +531,9 @@ if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 paleta = PALETA
+
+# CSS geral do Streamlit. A maior parte aqui ajusta responsividade, cards de estoque,
+# botoes e metricas sem depender de componentes externos.
 st.markdown(
     """
     <style>
@@ -922,6 +955,7 @@ if "alertas_enviados" not in st.session_state:
     st.session_state.alertas_enviados = []
 
 def renderizar_menu_lateral():
+    """Renderiza login administrativo e botao de sair."""
     with st.sidebar:
         st.title("ADM")
         if not st.session_state.autenticado:
@@ -938,6 +972,7 @@ def renderizar_menu_lateral():
 
 
 def renderizar_topo():
+    """Renderiza titulo e menu principal de abas."""
     st.markdown("<h3 class='app-title'>Minha Saude</h3>", unsafe_allow_html=True)
     st.markdown("<p class='app-subtitle'>Controle de remedios, consultas e gastos</p>", unsafe_allow_html=True)
     return st.segmented_control(
@@ -949,6 +984,7 @@ def renderizar_topo():
 
 
 def renderizar_alerta_estoque(remedio, estoque):
+    """Envia alerta de estoque baixo uma unica vez por sessao."""
     alerta_ja_enviado = bool(remedio.get(core.COL_ALERTA_ENVIADO, False))
     remedio_id = remedio.get(core.COL_ID)
     nome_remedio = core.nome_visivel_remedio(remedio[core.COL_NOME])
@@ -973,6 +1009,7 @@ def renderizar_alerta_estoque(remedio, estoque):
 
 
 def renderizar_card_estoque(remedio, estoque):
+    """Mostra o card compacto com quantidade, dose e dias restantes."""
     nome_remedio = core.nome_visivel_remedio(remedio[core.COL_NOME])
     st.markdown(
         f"""
@@ -1001,6 +1038,7 @@ def renderizar_card_estoque(remedio, estoque):
 
 
 def renderizar_ajuste_estoque(remedio, estoque, hoje):
+    """Formulario administrativo para registrar compra ou inativar remedio."""
     if not st.session_state.autenticado:
         return
 
@@ -1068,6 +1106,7 @@ def renderizar_ajuste_estoque(remedio, estoque, hoje):
 
 
 def tela_estoque():
+    """Tela principal: lista somente remedios ativos, ordenados por urgencia."""
     df = buscar_dados(core.TABELA_REMEDIOS)
     if df.empty:
         st.info("Nenhum remedio cadastrado ainda.")
@@ -1105,6 +1144,7 @@ def tela_estoque():
 
 
 def tela_inativos():
+    """Tela de controle dos remedios que nao aparecem mais no estoque ativo."""
     df = buscar_dados(core.TABELA_REMEDIOS)
     if df.empty:
         st.info("Nenhum remedio cadastrado ainda.")
@@ -1143,6 +1183,7 @@ def tela_inativos():
 
 
 def tela_financeiro():
+    """Tela de gastos, unindo compras de remedios e consultas."""
     st.subheader("Gastos Mensais")
     df_com = buscar_dados(core.TABELA_COMPRAS)
     df_con = buscar_dados(core.TABELA_CONSULTAS)
@@ -1180,7 +1221,7 @@ def tela_financeiro():
         st.info("Nenhum gasto encontrado para esse filtro.")
 
     st.divider()
-    st.metric("gastos totais", core.formatar_moeda_br(total_r + total_c))
+    st.metric("GASTOS TOTAIS", core.formatar_moeda_br(total_r + total_c))
     st.info(
         f"Remedios: {core.formatar_moeda_br(total_r)} | "
         f"Consultas: {core.formatar_moeda_br(total_c)}"
@@ -1198,6 +1239,7 @@ def tela_financeiro():
 
 
 def tela_consultas():
+    """Lista consultas cadastradas e permite exportacao CSV."""
     df = buscar_dados(core.TABELA_CONSULTAS)
     if df.empty:
         st.info("Nenhuma consulta cadastrada ainda.")
@@ -1215,6 +1257,7 @@ def tela_consultas():
 
 
 def cadastrar_remedio():
+    """Formulario de cadastro de remedio e compra inicial."""
     n = st.text_input("Nome")
     q = st.number_input("Qtd")
     d = st.number_input("Dose/Dia")
@@ -1278,6 +1321,7 @@ def cadastrar_remedio():
 
 
 def cadastrar_consulta():
+    """Formulario de cadastro de consulta com prevencao de duplicidade simples."""
     m = st.text_input("Medico")
     v = st.number_input("Valor")
     data_consulta = st.date_input("Data da consulta", value=datetime.now().date())
@@ -1328,6 +1372,7 @@ def cadastrar_consulta():
 
 
 def tela_cadastrar():
+    """Agrupa cadastro de remedios e consultas em uma unica aba."""
     if not st.session_state.autenticado:
         st.warning("Acesse o menu ADM na lateral.")
         return
@@ -1341,12 +1386,14 @@ def tela_cadastrar():
 
 
 def rotulo_remedio(remedio):
+    """Monta texto legivel para selects de remedios."""
     status = "Inativo" if core.registro_remedio_inativo(remedio) else "Ativo"
     nome = core.nome_visivel_remedio(remedio.get(core.COL_NOME, ""))
     return f"{status} - {nome} (id {remedio[core.COL_ID]})"
 
 
 def rotulo_compra(compra):
+    """Monta texto legivel para selects de compras no historico."""
     data = compra.get(core.COL_DATA_COMPRA, "")
     nome = compra.get(core.COL_NOME_REMEDIO, "")
     valor = core.formatar_moeda_br(compra.get(core.COL_VALOR, 0))
@@ -1354,6 +1401,7 @@ def rotulo_compra(compra):
 
 
 def editar_remedio():
+    """Edita dados cadastrais do remedio sem apagar compras antigas."""
     df = buscar_dados(core.TABELA_REMEDIOS)
     if df.empty:
         st.info("Nenhum remedio cadastrado para editar.")
@@ -1430,6 +1478,7 @@ def editar_remedio():
 
 
 def editar_compra():
+    """Corrige nome, valor ou data de uma compra ja registrada."""
     df = buscar_dados(core.TABELA_COMPRAS)
     if df.empty:
         st.info("Nenhuma compra cadastrada para editar.")
@@ -1486,6 +1535,7 @@ def editar_compra():
 
 
 def tela_editar():
+    """Aba administrativa para correcao de remedios e compras."""
     if not st.session_state.autenticado:
         st.warning("Acesse o menu ADM na lateral.")
         return
@@ -1498,6 +1548,7 @@ def tela_editar():
 
 
 def tela_remover():
+    """Remove registros selecionados; compras relacionadas nao sao apagadas em cascata."""
     if not st.session_state.autenticado:
         st.warning("Acesse o menu ADM na lateral.")
         return
@@ -1529,6 +1580,7 @@ def tela_remover():
 
 
 def main():
+    """Ponto de entrada do Streamlit: prepara layout e despacha a aba selecionada."""
     if not API_KEY:
         st.warning("Configure SUPABASE_API_KEY em .streamlit/secrets.toml para conectar ao Supabase.")
 
