@@ -1180,7 +1180,7 @@ def tela_financeiro():
         st.info("Nenhum gasto encontrado para esse filtro.")
 
     st.divider()
-    st.metric("TOTAL INVESTIDO", core.formatar_moeda_br(total_r + total_c))
+    st.metric("gastos totais", core.formatar_moeda_br(total_r + total_c))
     st.info(
         f"Remedios: {core.formatar_moeda_br(total_r)} | "
         f"Consultas: {core.formatar_moeda_br(total_c)}"
