@@ -25,8 +25,23 @@ jobs:
           fi
 
           echo "Acessando $APP_URL"
-          curl --fail --location --max-time 60 --retry 3 --retry-delay 10 "$APP_URL" > /dev/null
-          echo "App respondeu com sucesso."
+          STATUS_CODE=$(curl --silent --show-error --output /dev/null \
+            --write-out "%{http_code}" \
+            --max-time 60 \
+            --retry 3 \
+            --retry-delay 10 \
+            -A "Mozilla/5.0 keep-alive" \
+            "$APP_URL")
+
+          echo "Status HTTP: $STATUS_CODE"
+
+          if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
+            echo "App respondeu com sucesso."
+            exit 0
+          fi
+
+          echo "App nao respondeu com status esperado."
+          exit 1
 
       - name: Ping Supabase REST API
         env:
