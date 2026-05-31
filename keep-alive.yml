@@ -1,0 +1,47 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    # Streamlit Community Cloud hiberna apps sem trafego por volta de 12h.
+    # Rodar a cada 6h cria uma margem boa sem exagerar nas chamadas.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping Streamlit app
+        env:
+          # Troque pela URL publica do seu app no Streamlit Cloud.
+          # Exemplo: https://meu-app.streamlit.app
+          APP_URL: "https://controleremedio-mzfwho5ajaxua8jgxf5dvw.streamlit.app/"
+        run: |
+          if [ "$APP_URL" = "COLE_A_URL_DO_SEU_APP_AQUI" ]; then
+            echo "Configure APP_URL no arquivo .github/workflows/keep-alive.yml"
+            exit 1
+          fi
+
+          echo "Acessando $APP_URL"
+          curl --fail --location --max-time 60 --retry 3 --retry-delay 10 "$APP_URL" > /dev/null
+          echo "App respondeu com sucesso."
+
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_REST_URL: "https://phvjjwrerrcnsfmrijyg.supabase.co/rest/v1/"
+          SUPABASE_API_KEY: "COLE_SUA_CHAVE_SUPABASE_AQUI_SE_QUISER_PINGAR_O_BANCO"
+        run: |
+          if [ "$SUPABASE_API_KEY" = "COLE_SUA_CHAVE_SUPABASE_AQUI_SE_QUISER_PINGAR_O_BANCO" ]; then
+            echo "Ping do Supabase ignorado. Configure SUPABASE_API_KEY se quiser manter o banco ativo tambem."
+            exit 0
+          fi
+
+          echo "Acessando Supabase"
+          curl --fail --location --max-time 60 --retry 3 --retry-delay 10 \
+            "${SUPABASE_REST_URL}remedios?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_API_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_API_KEY}" \
+            > /dev/null
+          echo "Supabase respondeu com sucesso."
